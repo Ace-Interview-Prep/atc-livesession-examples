@@ -1,0 +1,1 @@
+/nix/store/ypx0whdqvwbql73nija0zrm4z3rgcm9l-postgresql-16.4/bin/postgres "-D" "pgdata" "-p" "5432" "-k" "/home/rhemsuda/code/haskell/examples/dbserialization/pgdata/run"

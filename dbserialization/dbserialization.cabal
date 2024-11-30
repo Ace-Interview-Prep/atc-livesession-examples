@@ -1,0 +1,35 @@
+cabal-version:      3.0
+name:               db-serialization
+version:            0.1.0.0
+license:            BSD-3-Clause
+license-file:       LICENSE
+author:             Rhemsuda
+build-type:         Simple
+extra-doc-files:    CHANGELOG.md
+
+common warnings
+    ghc-options: -Wall
+
+executable db-serialization
+    import:           warnings
+    main-is:          Main.hs
+    hs-source-dirs:   app
+    default-language: Haskell2010
+
+    build-depends:    base ^>=4.18.2.1
+                    , text
+                    , servant
+                    , servant-server
+                    , wai
+                    , warp
+                    , aeson
+                    , attoparsec-aeson
+                    , persistent
+                    , persistent-postgresql
+                    , persistent-template    
+                    , monad-logger
+                    , transformers
+                    , exceptions        
+    
+    other-modules:
+      
