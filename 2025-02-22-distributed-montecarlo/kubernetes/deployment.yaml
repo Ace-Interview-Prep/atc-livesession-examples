@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: haskell-master
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: haskell-master
+  template:
+    metadata:
+      labels:
+        app: haskell-master
+    spec:
+      containers:
+      - name: master
+        image: registry.digitalocean.com/atc-demo-docr/haskell-montecarlo:latest
+        command: ["DistributedMonteCarlo", "master", "10"]
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1"
+      imagePullSecrets:
+      - name: do-registry-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: master-service
+spec:
+  selector:
+    app: haskell-master
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 8080
+  type: LoadBalancer
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: haskell-worker
+spec:
+  replicas: 10
+  selector:
+    matchLabels:
+      app: haskell-worker
+  template:
+    metadata:
+      labels:
+        app: haskell-worker
+    spec:
+      containers:
+      - name: worker
+        image: registry.digitalocean.com/atc-demo-docr/haskell-montecarlo:latest
+        command: ["DistributedMonteCarlo", "worker"]
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      imagePullSecrets:
+      - name: do-registry-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: worker-service
+spec:
+  selector:
+    app: haskell-worker
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 8080
+  clusterIP: None

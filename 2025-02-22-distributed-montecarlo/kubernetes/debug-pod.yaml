@@ -1,0 +1,12 @@
+# debug-pod.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: debug-pod
+spec:
+  containers:
+  - name: debug
+    image: curlimages/curl
+    command: ["sleep", "3600"]
+  imagePullSecrets:
+  - name: do-registry-secret
