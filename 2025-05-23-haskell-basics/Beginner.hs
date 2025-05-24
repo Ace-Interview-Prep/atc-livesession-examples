@@ -10,20 +10,20 @@
 -- but we manually import them here so that we can see where it comes from and can search them on hoogle: https://hoogle.haskell.org/
 
 import Data.Foldable
-import Data.Function (on, (.))
+import Data.Function (on, (.), ($))
 import Data.Char (toUpper)
 import Data.Map (Map)
-import Data.Maybe (Maybe)
-import Data.Ord (Ord)
+import Data.Maybe (Maybe(..))
+import Data.Ord (Ord, max, min)
 import Data.Eq (Eq, (==))
 import Data.List
   (sort, reverse, filter, map, words)
-import Data.Bool (Bool, (&&) )
+import Data.Bool (Bool(..), (&&) )
 import Data.Char (Char, toLower)
 import System.IO (IO, putStrLn)
 import Prelude
   ( String, Int, IO, undefined
-  , putStrLn, show, otherwise, mod
+  , putStrLn, show, otherwise, rem
   )
 
 
@@ -40,19 +40,57 @@ import Prelude
 --     -> Monads
 --  4) How we use functional typeclasses to overload/abstract
 
+-- (\x -> x + 1) 2
+-- >>> 2+1
+-- >>> 3 
 
 
 
 
 
 
+-- instance Eq Bool where
+--   True == False = False
+--   True == True  = True
+--   False == False = True
+
+-- -- python-like
+-- def f(myInput :: Int | Float | String):
+--   if typeof(myInput) == string:
+--      convertToInt 
+--   let x = statement1()
+--   statement2(x)
+--   statement2() -- crash  
+--   let output = statement3()
+
+--   if x:
+--     then
+--        g = someFunc()
+--        doA
+--     else
+--       func(g)
+--       doB 
+--   return output
 
 
+-- f :: Maybe ()
+-- f = do
+--   x <- statement1
+--   statement2 x
+--   statement2 -- fail to typecheck
+--   statement3
 
-
-
+-- | A function is a type that takes an input
+-- | and output as type parameters
 isPalindrome :: String -> Bool
-isPalindrome str = str == reverse str
+isPalindrome str = str == (reverse str)
+
+-- f $ g x 
+value :: Bool
+value = True  
+
+isValueTrue :: Bool
+isValueTrue {--} = True == value 
 
 -- >>> isPalindrome "racecar"
 -- True
@@ -60,19 +98,38 @@ isPalindrome str = str == reverse str
 -- >>> isPalindrome "hello world!"
 -- False
 
+-- [ ................................................... ] 
+-- idx ++
+-- idx_moveBack = idx
+-- idx_moveBack = idx_moveBack - 1 
+-- idx_moveBack = idx 
+
+
+-- rem n 3 == n `rem` 3
+
+result1 = (==) True False
+result2 = True == False 
+
+-- (==) :: Bool -> Bool -> Bool
+-- (==) 
+
 fizzle :: Int -> String
 fizzle n
-  | n `mod` 3 == 0 && n `mod` 5 == 0 = "Fizz Buzz!"
-  | n `mod` 3 == 0 = "Fizz!"
-  | n `mod` 5 == 0 = "Buzz!"
+  | rem n 3 == 0 && n `rem` 5 == 0 = "Fizz Buzz!"
+  -- ((n `rem` 3) == 0) && ((n `rem` 5) == 0) = "Fizz Buzz!"
+  | n `rem` 3 == 0 = "Fizz!"
+  | n `rem` 5 == 0 = "Buzz!"
   | otherwise = show n
 
 fizzbuzz100 :: IO ()
 fizzbuzz100 = do
-    for_ [1..100] (putStrLn . fizzle)
+  for_ [1..100] (\x -> putStrLn . fizzle $ x)
 
+-- | For homework, how does this evaluate
 isAnagram :: String -> String -> Bool
-isAnagram = (==) `on` (sort . map toLower)
+isAnagram str1 str2 = ((==) `on` (sort . map toLower)) str1 str2
+
+
 
 -- >>> isAnagram "elbow" "below"
 -- True
@@ -84,11 +141,93 @@ isAnagram = (==) `on` (sort . map toLower)
 simpleMinMax :: Ord a => [a] -> (a, a)
 simpleMinMax xs = (minimum xs, maximum xs)
 
-myMaximum :: a
-myMaximum = undefined
 
-myMinimum :: a
-myMinimum = undefined
+-- add1 x = x + 1
+
+-- do
+--   add1 3
+--   add1 3
+
+-- xs :: [Int] 
+-- xs = [1..]
+
+-- print $ take 5 xs
+
+-- [1..10]
+-- 1 : 2 : 3 : 4 : 5 : 6 : 7 : 8 : 9 : 10 : []
+-- xs
+-- x : xs
+-- [1]
+
+-- 1 : []
+-- 1 : (2 : 3 : 4 : 5 : 6 : 7 : 8 : 9 : 10 : [])
+-- x : xs 
+
+-- take :: Int -> [a] -> [a]
+-- take 0 _ = [] 
+-- take n (x:xs) = x : take (n - 1) xs
+
+-- silly :: a -> a
+-- silly xs = xs 
+
+-- 1 : 2 : 3 : xs
+-- 1 : 2 : 3 : 4 : []
+
+-- myMaximum [] == -1
+
+-- output * someOtherOutput
+-- r = -7234235
+-- = p - r
+-- =
+-- = 65
+
+-- 71 71 71 72 71.5 73 80 73 73 73
+-- 80
+-- 5 000 000
+-- = 400 000 000
+
+-- data Maybe a = Just a | Nothing
+
+-- myMaximum [] == Nothing
+-- myMaximum [] == 0
+
+-- fromMaybe 0 
+
+
+myMaximum :: Ord a => [a] -> Maybe a
+myMaximum [] = Nothing
+myMaximum (x:xs) = Just $ go x xs
+  where
+    go :: Ord a => a -> [a] -> a
+    go currMax [] = currMax
+    go currMax (x:xs) =
+      go (max currMax x) (xs) 
+
+  -- let currMax = max x1 x2
+myMinimum :: Ord a => [a] -> Maybe a
+myMinimum [] = Nothing
+myMinimum (x:xs) = Just $ go x xs
+  where
+    go :: Ord a => a -> [a] -> a
+    go currMax [] = currMax
+    go currMax (x:xs) =
+      go (min currMax x) (xs) 
+
+myOrd :: Ord a
+  => (a -> a -> a) -> [a] -> Maybe a
+myOrd f [] = Nothing
+myOrd f (x:xs) = Just $ go f x xs
+  where
+    go :: Ord a
+      => (a -> a -> a)
+      -> a
+      -> [a]
+      -> a
+    go f currM [] = currM
+    go f currM (x:xs) =
+      go f (f currM x) (xs) 
+
+
 
 safeMinMax :: a
 safeMinMax = undefined
