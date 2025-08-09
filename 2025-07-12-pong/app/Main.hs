@@ -16,11 +16,18 @@ import qualified Data.Vector.Storable as V
 import Graphics.Rendering.OpenGL.GL.CoordTrans
 import Shaders (vertexShaderSource, fragmentShaderSource)
 
+
+data Ball = Ball
+  { _ball_pos :: V2 Float
+  , _ball_size :: Float
+  }
+
+
 screenWidth :: (Num a) => a
 screenWidth = 800
 
 screenHeight :: (Num a) => a
-screenHeight = 600
+screenHeight = 800
 
 main :: IO ()
 main = do
@@ -57,13 +64,16 @@ main = do
 
   GL.currentProgram $= Just program
 
-  (vao, vbo) <- createTriangleVertices
+  (triangleVao, triangleVbo) <- createTriangleVertices
 
-  gameLoop window vao program
+  let ball = Ball (V2 0 0) 0.25
+  (ballVao, ballVbo) <- createBallVertices ball
+
+  gameLoop window triangleVao ballVao program
 
   GL.deleteObjectNames [program]
-  GL.deleteObjectNames [vao]
-  GL.deleteObjectNames [vbo]
+  GL.deleteObjectNames [triangleVao, ballVao]
+  GL.deleteObjectNames [triangleVbo, ballVbo]
   glDeleteContext glContext
   destroyWindow window
   quit
@@ -76,6 +86,47 @@ isQuitEvent e = case e of
     keyboardEventKeyMotion keyboardEvent == Pressed &&
     keysymKeycode (keyboardEventKeysym keyboardEvent) == KeycodeEscape
   _ -> False
+
+
+
+createBallVertices :: Ball -> IO (GL.VertexArrayObject, GL.BufferObject)
+createBallVertices ball = do
+  let vertices
+        = V.fromList
+        $ unwrapV2
+        $ createCircleVertices
+        $ _ball_size ball
+
+  vao <- GL.genObjectName
+  GL.bindVertexArrayObject $= Just vao
+
+  vbo <- GL.genObjectName
+  GL.bindBuffer GL.ArrayBuffer $= Just vbo
+  V.unsafeWith vertices $ \ptr ->
+    GL.bufferData GL.ArrayBuffer $= (fromIntegral (V.length vertices * 4), ptr, GL.StaticDraw)
+
+  GL.vertexAttribArray (GL.AttribLocation 0) $= GL.Enabled
+  GL.vertexAttribPointer (GL.AttribLocation 0) $=
+    (GL.ToFloat, GL.VertexArrayDescriptor 3 GL.Float 0 nullPtr)
+
+  GL.bindBuffer GL.ArrayBuffer $= Nothing
+  GL.bindVertexArrayObject $= Nothing
+
+  return (vao, vbo)
+
+  where
+    unwrapV2 :: [V2 Float] -> [Float]
+    unwrapV2 [] = []
+    unwrapV2 ((V2 x y):xs) = x : y : 0.0 : unwrapV2 xs
+
+
+
+createCircleVertices :: Float -> [V2 Float]
+createCircleVertices radius = (calculateCircumferencePoint radius) <$> [1..360]
+
+
+calculateCircumferencePoint :: Float -> Int -> V2 Float
+calculateCircumferencePoint r th = V2 (r * (sin (fromIntegral th))) (r * (cos (fromIntegral th)))
 
 
 createTriangleVertices :: IO (GL.VertexArrayObject, GL.BufferObject)
@@ -128,8 +179,8 @@ compileShaderFromSource shaderType source = do
   return shader
 
 
-gameLoop :: Window -> GL.VertexArrayObject -> GL.Program -> IO ()
-gameLoop window vao program = do
+gameLoop :: Window -> GL.VertexArrayObject -> GL.VertexArrayObject -> GL.Program -> IO ()
+gameLoop window triangleVao ballVao program = do
   events <- pollEvents
   let quit = any (isQuitEvent . eventPayload) events
 
@@ -137,12 +188,14 @@ gameLoop window vao program = do
   GL.clearColor $= GL.Color4 0 0 0 1
   GL.clear [GL.ColorBuffer]
 
-  -- Draw triangle
-  GL.currentProgram $= Just program
-  GL.bindVertexArrayObject $= Just vao
-  GL.drawArrays GL.Triangles 0 3
+  -- Draw triangle  
+  --GL.bindVertexArrayObject $= Just triangleVao
+  --GL.drawArrays GL.Triangles 0 3
 
+  GL.currentProgram $= Just program
+  GL.bindVertexArrayObject $= Just ballVao
+  GL.drawArrays GL.LineLoop 0 360
   -- Swap buffers
   glSwapWindow window
 
-  unless quit $ gameLoop window vao program
+  unless quit $ gameLoop window triangleVao ballVao program
