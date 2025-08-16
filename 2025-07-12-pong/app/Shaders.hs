@@ -25,6 +25,7 @@ fragmentShaderSource = BS.unlines
   , "out vec4 FragColor;"
   , "void main() {"
   , "    vec3 normalColor = normalize(vPos);"
-  , "    FragColor = vec4(abs(normalColor), 1.0);"
+--  , "    FragColor = vec4(abs(normalColor), 1.0);"
+  , "    FragColor = vec4(1.0, 1.0, 1.0, 1.0);"
   , "}"
   ]

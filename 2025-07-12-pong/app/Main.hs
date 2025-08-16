@@ -11,16 +11,37 @@ import Foreign.C.Types (CInt)
 import Control.Exception (SomeException, try, throwIO)
 import Control.Monad (unless, void)
 import Data.ByteString (ByteString)
+import GHC.Int
 import qualified Graphics.Rendering.OpenGL as GL
 import qualified Data.Vector.Storable as V
 import Graphics.Rendering.OpenGL.GL.CoordTrans
 import Shaders (vertexShaderSource, fragmentShaderSource)
 
+import Data.Time.Clock.POSIX (getPOSIXTime)
+
+getUnixTimeMillis :: IO Integer
+getUnixTimeMillis = do
+  time <- getPOSIXTime
+  return $ floor (time * 1000)
 
 data Ball = Ball
   { _ball_pos :: V2 Float
   , _ball_size :: Float
   }
+
+newtype Mass = Mass Float
+newtype Gravity = Gravity Float
+
+gravity :: Gravity
+gravity = Gravity 9.80665
+
+-- applyGravity :: V2 -> Mass -> V2
+-- applyGravity pos mass = pos - (mass * gravity)
+
+
+
+
+
 
 
 screenWidth :: (Num a) => a
@@ -66,14 +87,13 @@ main = do
 
   (triangleVao, triangleVbo) <- createTriangleVertices
 
-  let ball = Ball (V2 0 0) 0.25
-  (ballVao, ballVbo) <- createBallVertices ball
-
-  gameLoop window triangleVao ballVao program
+  let ball = Ball (V2 0 0) 0.1
+  currentUnixTime <- getUnixTimeMillis
+  gameLoop window triangleVao ball currentUnixTime program
 
   GL.deleteObjectNames [program]
-  GL.deleteObjectNames [triangleVao, ballVao]
-  GL.deleteObjectNames [triangleVbo, ballVbo]
+  GL.deleteObjectNames [triangleVao]--, ballVao]
+  GL.deleteObjectNames [triangleVbo]--, ballVbo]
   glDeleteContext glContext
   destroyWindow window
   quit
@@ -89,13 +109,15 @@ isQuitEvent e = case e of
 
 
 
-createBallVertices :: Ball -> IO (GL.VertexArrayObject, GL.BufferObject)
+createBallVertices :: Ball -> IO (GL.VertexArrayObject, GL.BufferObject, Int)
 createBallVertices ball = do
-  let vertices
+  let V2 ballX ballY = _ball_pos ball
+      ballRadius = _ball_size ball / 2
+      vertices
         = V.fromList
-        $ unwrapV2
-        $ createCircleVertices
-        $ _ball_size ball
+        $ concat [ [ballX, ballY, 0.0]
+                 ] ++ unwrapV2 (createCircleVertices ballRadius)
+      numVertices = (V.length vertices) `div` 3
 
   vao <- GL.genObjectName
   GL.bindVertexArrayObject $= Just vao
@@ -112,7 +134,7 @@ createBallVertices ball = do
   GL.bindBuffer GL.ArrayBuffer $= Nothing
   GL.bindVertexArrayObject $= Nothing
 
-  return (vao, vbo)
+  return (vao, vbo, numVertices)
 
   where
     unwrapV2 :: [V2 Float] -> [Float]
@@ -179,14 +201,27 @@ compileShaderFromSource shaderType source = do
   return shader
 
 
-gameLoop :: Window -> GL.VertexArrayObject -> GL.VertexArrayObject -> GL.Program -> IO ()
-gameLoop window triangleVao ballVao program = do
+gameLoop :: Window -> GL.VertexArrayObject -> Ball -> Integer -> GL.Program -> IO ()
+gameLoop window triangleVao ball prevTime program = do
   events <- pollEvents
+  currentUnixTime <- getUnixTimeMillis
+
   let quit = any (isQuitEvent . eventPayload) events
+      timeDelta = currentUnixTime - prevTime
 
   -- Clear the screen
   GL.clearColor $= GL.Color4 0 0 0 1
   GL.clear [GL.ColorBuffer]
+
+  let movementVector = V2 0.0 (-0.01)
+      newBall = Ball ((_ball_pos ball) + movementVector) (_ball_size ball)
+
+  (ballVao, ballVbo, ballNumVertices) <- createBallVertices newBall
+
+  -- OUR ENTIRE GAME
+
+  -- WE NEED TIME DELTA HERE
+
 
   -- Draw triangle  
   --GL.bindVertexArrayObject $= Just triangleVao
@@ -194,8 +229,8 @@ gameLoop window triangleVao ballVao program = do
 
   GL.currentProgram $= Just program
   GL.bindVertexArrayObject $= Just ballVao
-  GL.drawArrays GL.LineLoop 0 360
+  GL.drawArrays GL.TriangleFan 0 (fromIntegral ballNumVertices)
   -- Swap buffers
   glSwapWindow window
 
-  unless quit $ gameLoop window triangleVao ballVao program
+  unless quit $ gameLoop window triangleVao newBall currentUnixTime program

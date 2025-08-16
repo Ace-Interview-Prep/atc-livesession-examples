@@ -25,5 +25,6 @@ executable pingpong
                     , vector
                     , bytestring
                     , OpenGL
+                    , time
     hs-source-dirs:   app
     default-language: Haskell2010
