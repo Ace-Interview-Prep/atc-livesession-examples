@@ -91,6 +91,13 @@ instance ActorClass (Actor 'PaddleTag) where
 -- | multiparam typeclasses pragma makes this possible - 
 class Collides a b where
   collides :: a -> b -> Bool
+-- TODO even using this Collide with [AnyActor] it means that with the instances of:
+-- instance Collides (Actor 'BallTag) (Actor 'BallTag) where ...
+-- instance Collides (Actor 'BallTag) (Actor 'PaddleTag) where ...
+-- you need to know which type is what in the array [AnyActor] but it is hidden at compile time 
+-- Collides is like compile-time overloading: the compiler needs to know the types statically.
+-- [AnyActor] is like a box where you’ve hidden the label. You can still open the box at runtime, but the compiler can’t look inside.
+-- so the issue is that using Collide a b instances, we need to know what type is the second object, but if we use an ethereogeneous list, we don't know at compile time what type it is, because we hide it behind existential type.. which if we need to use runtime pattern match.. then makes it more wirthwhile to get rid of the ethereogeneous list so that at list we keep the types simple
 
 -- | Existential wrapper to store heterogeneous actors
 -- This says: “A @AnyActor@ can wrap up any type @a@ that
