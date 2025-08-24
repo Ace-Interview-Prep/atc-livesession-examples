@@ -20,36 +20,12 @@ import Shaders (vertexShaderSource, fragmentShaderSource)
 import Data.Time.Clock.POSIX (getPOSIXTime)
 
 import Types
-
-getX :: V2 a -> a
-getX (V2 x _) = x
-
-getY :: V2 a -> a
-getY (V2 _ y) = y
+import Helpers
 
 getUnixTimeMillis :: IO Integer
 getUnixTimeMillis = do
   time <- getPOSIXTime
   return $ floor (time * 1000)
-
--- data Actor
---   = Ball
---     { _ball_pos :: V2 Float
---     , _ball_size :: Float
---     , _ball_direction :: V2 Float
---     }
---   | Paddle
---     { _paddle_pos :: V2 Float
---     , _paddle_width :: Float
---     , _paddle_height :: Float
---     }
-
-data Boundary = Boundary
-  { _boundary_left :: Float
-  , _boundary_right :: Float
-  , _boundary_top :: Float
-  , _boundary_bottom :: Float
-  }
 
 isInBoundary :: Actor -> Boundary -> Bool
 isInBoundary (Ball pos size _) boundary
@@ -65,11 +41,6 @@ isInBoundary (Paddle pos width height) boundary
 
 newtype Mass = Mass Float
 newtype Gravity = Gravity Float
-
-data GameScene = GameScene
-  { _gameScene_actors :: [Actor]
-  , _gameScene_boundary :: Boundary
-  }
 
 gravity :: Gravity
 gravity = Gravity 9.80665
@@ -256,18 +227,18 @@ compileShaderFromSource shaderType source = do
     putStrLn $ "Shader compile log: " ++ log
   return shader
 
-hasCollided :: Actor -> [Actor] -> Bool
-hasCollided _ [] = False
-hasCollided (Ball pos size mv) ((Ball pos2 size2 _):bs) =
-  let
-    distanceX = (getX pos) - (getX pos2)
-    distanceY = (getY pos) - (getY pos2)
-    distance = sqrt ((distanceX ** 2) + (distanceY ** 2))
-  in
-    if distance > (size/2) + (size2/2)
-    then hasCollided (Ball pos size mv) bs
-    else True
-hasCollided _ _ = False
+-- hasCollided :: Actor -> [Actor] -> Bool
+-- hasCollided _ [] = False
+-- hasCollided (Ball pos size mv) ((Ball pos2 size2 _):bs) =
+--   let
+--     distanceX = (getX pos) - (getX pos2)
+--     distanceY = (getY pos) - (getY pos2)
+--     distance = sqrt ((distanceX ** 2) + (distanceY ** 2))
+--   in
+--     if distance > (size/2) + (size2/2)
+--     then hasCollided (Ball pos size mv) bs
+--     else True
+-- hasCollided _ _ = False
 
 applyCollision :: Actor -> Actor
 applyCollision (Ball pos size mv) = Ball pos size (-mv)

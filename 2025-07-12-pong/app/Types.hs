@@ -1,6 +1,7 @@
 {-# LANGUAGE TypeFamilies, DataKinds   #-}
 {-# LANGUAGE FlexibleInstances         #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE MultiParamTypeClasses     #-}
 -- one of the key “architectural” advantages of data families over ADTs is that 
 -- you don’t have to pattern match on constructors as much, because each type is 
 -- a separate type rather than a variant of a single ADT.
@@ -9,6 +10,8 @@ module Types where
 
 import Linear.V2
 import qualified Graphics.Rendering.OpenGL as GL
+
+import Helpers
 
 -- Haskell needs a way to know which constructor an instance is at runtime.
 -- If you have a value of type @Actor@, it could be either a @Ball@ or a @Paddle@.
@@ -52,9 +55,11 @@ data instance Actor 'PaddleTag = Paddle
 class ActorClass a where
   applyCollision :: a -> a
   moveActor :: a -> GameScene -> a
-  hasCollided :: a -> [a] -> Bool -- [a] should be generalised
+  hasCollided :: a -> [AnyActor] -> Bool -- [a] should be generalised
   createActorVertices :: a -> IO (GL.VertexArrayObject, GL.BufferObject, Int)
   isInBoundary :: a -> Boundary -> Bool
+  pos :: a -> V2 Float
+  size :: a -> Float
 
 -- | Hasell does not usually allow instances for concrete
 -- type family application. 
@@ -63,16 +68,29 @@ class ActorClass a where
 instance ActorClass (Actor 'BallTag) where
   applyCollision = undefined
   moveActor = undefined
-  hasCollided = undefined
+  hasCollided _ [] = False
+  hasCollided ball ((Ball pos2 size2 _):bs) =
+    let
+      distanceX = (getX pos) - (getX pos2)
+      distanceY = (getY pos) - (getY pos2)
+      distance = sqrt ((distanceX ** 2) + (distanceY ** 2))
+    in
+      if distance > (size/2) + (size2/2)
+      then hasCollided (Ball pos size mv) bs
+      else True
   createActorVertices = undefined
   isInBoundary = undefined
 
 instance ActorClass (Actor 'PaddleTag) where
   applyCollision = undefined
   moveActor = undefined
-  hasCollided = undefined
+  hasCollided _ _ = False 
   createActorVertices = undefined
   isInBoundary = undefined
+
+-- | multiparam typeclasses pragma makes this possible - 
+class Collides a b where
+  collides :: a -> b -> Bool
 
 -- | Existential wrapper to store heterogeneous actors
 -- This says: “A @AnyActor@ can wrap up any type @a@ that

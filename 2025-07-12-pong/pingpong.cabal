@@ -19,6 +19,7 @@ executable pingpong
     import:           warnings
     main-is:          Main.hs
     other-modules:    Types
+                    , Helpers
     -- other-extensions:
     build-depends:    base >=4.18.2.1
                     , sdl2
