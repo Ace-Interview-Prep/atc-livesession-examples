@@ -27,18 +27,6 @@ getUnixTimeMillis = do
   time <- getPOSIXTime
   return $ floor (time * 1000)
 
-isInBoundary :: Actor -> Boundary -> Bool
-isInBoundary (Ball pos size _) boundary
-  = ((getX pos) - size < _boundary_left boundary)
-  || ((getX pos) + size > _boundary_right boundary)
-  || ((getY pos) - size < _boundary_top boundary)
-  || ((getY pos) + size > _boundary_bottom boundary)
-isInBoundary (Paddle pos width height) boundary
-  = ((getX pos) - width < _boundary_left boundary)
-  || ((getX pos) + width > _boundary_right boundary)
-  || ((getY pos) - height < _boundary_top boundary)
-  || ((getY pos) + height > _boundary_bottom boundary)
-
 newtype Mass = Mass Float
 newtype Gravity = Gravity Float
 
@@ -226,27 +214,6 @@ compileShaderFromSource shaderType source = do
     log <- GL.get (GL.shaderInfoLog shader)
     putStrLn $ "Shader compile log: " ++ log
   return shader
-
--- hasCollided :: Actor -> [Actor] -> Bool
--- hasCollided _ [] = False
--- hasCollided (Ball pos size mv) ((Ball pos2 size2 _):bs) =
---   let
---     distanceX = (getX pos) - (getX pos2)
---     distanceY = (getY pos) - (getY pos2)
---     distance = sqrt ((distanceX ** 2) + (distanceY ** 2))
---   in
---     if distance > (size/2) + (size2/2)
---     then hasCollided (Ball pos size mv) bs
---     else True
--- hasCollided _ _ = False
-
-applyCollision :: Actor -> Actor
-applyCollision (Ball pos size mv) = Ball pos size (-mv)
-applyCollision (Paddle pos width height) = Paddle pos width height
-
-moveActor :: Actor -> GameScene -> Actor
-moveActor (Ball pos size mv) scene = Ball (pos + mv) size mv
-moveActor (Paddle pos width height) scene = Paddle pos width height
 
 gameLoop :: Window -> GL.VertexArrayObject -> GameScene -> Integer -> GL.Program -> IO ()
 gameLoop window triangleVao gameScene prevTime program = do

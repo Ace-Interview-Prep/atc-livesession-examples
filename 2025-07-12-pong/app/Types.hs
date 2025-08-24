@@ -4,6 +4,7 @@ module Types where
 
 import Linear.V2
 import qualified Graphics.Rendering.OpenGL as GL
+import qualified Data.Vector.Storable as V
 
 import Helpers
 
@@ -27,21 +28,58 @@ data Paddle = Paddle
 -- Typeclass for generic operations
 class ActorClass a where
   applyCollision :: a -> a
-  moveActor :: a -> GameScene -> a
-  createActorVertices :: a -> IO (GL.VertexArrayObject, GL.BufferObject, Int)
+  moveActor :: a -> a
   isInBoundary :: a -> Boundary -> Bool
+  createActorVertices :: a -> IO (GL.VertexArrayObject, GL.BufferObject, Int)
 
 instance ActorClass Ball where
-  applyCollision = undefined
-  moveActor = undefined
-  createActorVertices = undefined
-  isInBoundary = undefined
+  applyCollision (Ball pos size mv) = Ball pos size (-mv)
+  moveActor (Ball pos size mv) = Ball (pos + mv) size mv
+  isInBoundary (Ball pos size _) boundary
+    =  (getX pos - size < _boundary_left boundary)
+    || (getX pos + size > _boundary_right boundary)
+    || (getY pos - size < _boundary_top boundary)
+    || (getY pos + size > _boundary_bottom boundary)
+  createActorVertices (Ball ballPos size _) = do
+    let V2 ballX ballY = ballPos
+        ballRadius = size / 2
+        vertices
+          = V.fromList
+          $ concat [ [ballX, ballY, 0.0]
+                   ] ++ unwrapV2 (createCircleVertices ballPos ballRadius)
+        numVertices = (V.length vertices) `div` 3
+
+    vao <- GL.genObjectName
+    GL.bindVertexArrayObject GL.$= Just vao
+
+    vbo <- GL.genObjectName
+    GL.bindBuffer GL.ArrayBuffer GL.$= Just vbo
+    V.unsafeWith vertices $ \ptr ->
+      GL.bufferData GL.ArrayBuffer GL.$= (fromIntegral (V.length vertices * 4), ptr, GL.StaticDraw)
+
+    GL.vertexAttribArray (GL.AttribLocation 0) GL.$= GL.Enabled
+    GL.vertexAttribPointer (GL.AttribLocation 0) GL.$=
+      (GL.ToFloat, GL.VertexArrayDescriptor 3 GL.Float 0 nullPtr)
+
+    GL.bindBuffer GL.ArrayBuffer GL.$= Nothing
+    GL.bindVertexArrayObject GL.$= Nothing
+
+    return (vao, vbo, numVertices)
+
+    where
+      unwrapV2 :: [V2 Float] -> [Float]
+      unwrapV2 [] = []
+      unwrapV2 ((V2 x y):xs) = x : y : 0.0 : unwrapV2 xs
 
 instance ActorClass Paddle where
-  applyCollision = undefined
-  moveActor = undefined
+  applyCollision (Paddle pos width height) = Paddle pos width height
+  moveActor (Paddle pos width height) = Paddle pos width height
+  isInBoundary (Paddle pos width height) boundary
+    =  (getX pos - width < _boundary_left boundary)
+    || (getX pos + width > _boundary_right boundary)
+    || (getY pos - height < _boundary_top boundary)
+    || (getY pos + height > _boundary_bottom boundary)
   createActorVertices = undefined
-  isInBoundary = undefined
 
 -- | multiparam typeclasses pragma makes this possible - 
 class Collides a b where
@@ -57,6 +95,7 @@ instance Collides Ball Ball where
       (distance <= ((size / 2) + (size2 / 2))) || False 
 
 -- | TODO need to revisit this calculation, I don't think is correct.
+--   not sure if position is at the center for both or not.
 instance Collides Ball Paddle where
   collides (Ball posB r _) (Paddle posP w h) =
     let (xBall, yBall)     = (getX posB, getY posB)
