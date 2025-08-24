@@ -5,6 +5,8 @@
 
 module Types where
 
+import Linear.V2
+
 -- Haskell needs a way to know which constructor an instance is at runtime.
 -- If you have a value of type @Actor@, it could be either a @Ball@ or a @Paddle@.
 -- Haskell internally stores a small integer or “tag” that says which constructor it is.
@@ -30,6 +32,16 @@ data family Actor (t :: ActorTag)
 
 -- DataKinds promotes constructors (BallTag and PaddleTag) to be used 
 -- on the left side of `=` as Type. From Value Level to Type Level. 
--- the ' is just "clarity sugar". BallTag would work too.
+-- the '+BallTag is just "clarity sugar". BallTag would work too.
 data instance Actor 'BallTag = Ball
+  { _ball_pos :: V2 Float
+  , _ball_size :: Float
+  , _ball_direction :: V2 Float
+  }
+  
 data instance Actor 'PaddleTag = Paddle
+  { _paddle_pos :: V2 Float
+  , _paddle_width :: Float
+  , _paddle_height :: Float
+  }
+
