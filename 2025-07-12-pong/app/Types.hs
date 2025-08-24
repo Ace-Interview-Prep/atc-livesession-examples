@@ -5,6 +5,7 @@ module Types where
 import Linear.V2
 import qualified Graphics.Rendering.OpenGL as GL
 import qualified Data.Vector.Storable as V
+import Foreign.Ptr
 
 import Helpers
 
@@ -79,7 +80,38 @@ instance ActorClass Paddle where
     || (getX pos + width > _boundary_right boundary)
     || (getY pos - height < _boundary_top boundary)
     || (getY pos + height > _boundary_bottom boundary)
-  createActorVertices = undefined
+  createActorVertices (Paddle pos width height) = do
+    let V2 rectX rectY = pos
+        V2 rectW rectH = V2 width height
+
+        vertices = V.fromList $
+          concatMap (\(V2 x y) -> [x, y, 0.0]) $
+          [ V2 rectX         rectY
+          , V2 (rectX+rectW) rectY
+          , V2 rectX         (rectY+rectH)
+          , V2 rectX         (rectY+rectH)
+          , V2 (rectX+rectW) rectY
+          , V2 (rectX+rectW) (rectY+rectH)
+          ]
+
+        numVertices = V.length vertices `div` 3
+
+    vao <- GL.genObjectName
+    GL.bindVertexArrayObject GL.$= Just vao
+
+    vbo <- GL.genObjectName
+    GL.bindBuffer GL.ArrayBuffer GL.$= Just vbo
+    V.unsafeWith vertices $ \ptr ->
+      GL.bufferData GL.ArrayBuffer GL.$= (fromIntegral (V.length vertices * 4), ptr, GL.StaticDraw)
+
+    GL.vertexAttribArray (GL.AttribLocation 0) GL.$= GL.Enabled
+    GL.vertexAttribPointer (GL.AttribLocation 0) GL.$=
+      (GL.ToFloat, GL.VertexArrayDescriptor 3 GL.Float 0 nullPtr)
+
+    GL.bindBuffer GL.ArrayBuffer GL.$= Nothing
+    GL.bindVertexArrayObject GL.$= Nothing
+
+    return (vao, vbo, numVertices)
 
 -- | multiparam typeclasses pragma makes this possible - 
 class Collides a b where
