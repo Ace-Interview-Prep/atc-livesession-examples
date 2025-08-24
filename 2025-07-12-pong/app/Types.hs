@@ -24,5 +24,12 @@ module Types where
 -- You can call move or getPos on without pattern matching, 
 -- because the type is known.
 
-data Actor = Ball | Paddle
+data ActorTag = BallTag | PaddleTag
 
+data family Actor (t :: ActorTag)
+
+-- DataKinds promotes constructors (BallTag and PaddleTag) to be used 
+-- on the left side of `=` as Type. From Value Level to Type Level. 
+-- the ' is just "clarity sugar". BallTag would work too.
+data instance Actor 'BallTag = Ball
+data instance Actor 'PaddleTag = Paddle
