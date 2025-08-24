@@ -19,6 +19,8 @@ import Shaders (vertexShaderSource, fragmentShaderSource)
 
 import Data.Time.Clock.POSIX (getPOSIXTime)
 
+import Types
+
 getX :: V2 a -> a
 getX (V2 x _) = x
 
@@ -30,17 +32,17 @@ getUnixTimeMillis = do
   time <- getPOSIXTime
   return $ floor (time * 1000)
 
-data Actor
-  = Ball
-    { _ball_pos :: V2 Float
-    , _ball_size :: Float
-    , _ball_direction :: V2 Float
-    }
-  | Paddle
-    { _paddle_pos :: V2 Float
-    , _paddle_width :: Float
-    , _paddle_height :: Float
-    }
+-- data Actor
+--   = Ball
+--     { _ball_pos :: V2 Float
+--     , _ball_size :: Float
+--     , _ball_direction :: V2 Float
+--     }
+--   | Paddle
+--     { _paddle_pos :: V2 Float
+--     , _paddle_width :: Float
+--     , _paddle_height :: Float
+--     }
 
 data Boundary = Boundary
   { _boundary_left :: Float

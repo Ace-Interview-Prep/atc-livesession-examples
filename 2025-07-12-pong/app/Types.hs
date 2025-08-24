@@ -6,6 +6,7 @@
 module Types where
 
 import Linear.V2
+import qualified Graphics.Rendering.OpenGL as GL
 
 -- Haskell needs a way to know which constructor an instance is at runtime.
 -- If you have a value of type @Actor@, it could be either a @Ball@ or a @Paddle@.
@@ -45,3 +46,39 @@ data instance Actor 'PaddleTag = Paddle
   , _paddle_height :: Float
   }
 
+-- Typeclass for generic operations
+class ActorClass a where
+  applyCollision :: a -> a
+  moveActor :: a -> GameScene -> a
+  hasCollided :: a -> [a] -> Bool -- [a] should be generalised
+  createActorVertices :: a -> IO (GL.VertexArrayObject, GL.BufferObject, Int)
+  isInBoundary :: a -> Boundary -> Bool
+
+instance ActorClass (Actor 'BallTag) where
+  applyCollision = undefined
+  moveActor = undefined
+  hasCollided = undefined
+  createActorVertices = undefined
+  isInBoundary = undefined
+
+instance ActorClass (Actor 'PaddleTag) where
+  applyCollision = undefined
+  moveActor = undefined
+  hasCollided = undefined
+  createActorVertices = undefined
+  isInBoundary = undefined
+
+--------------------------------------------
+-- Transfered from Main: original Kept Types
+--
+data Boundary = Boundary
+  { _boundary_left :: Float
+  , _boundary_right :: Float
+  , _boundary_top :: Float
+  , _boundary_bottom :: Float
+  }
+
+data GameScene = GameScene
+  { _gameScene_actors :: [Actor]
+  , _gameScene_boundary :: Boundary
+  }
