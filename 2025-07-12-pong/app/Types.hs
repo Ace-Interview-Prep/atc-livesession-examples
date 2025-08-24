@@ -1,4 +1,6 @@
-{-# LANGUAGE TypeFamilies, DataKinds #-}
+{-# LANGUAGE TypeFamilies, DataKinds   #-}
+{-# LANGUAGE FlexibleInstances         #-}
+{-# LANGUAGE ExistentialQuantification #-}
 -- one of the key “architectural” advantages of data families over ADTs is that 
 -- you don’t have to pattern match on constructors as much, because each type is 
 -- a separate type rather than a variant of a single ADT.
@@ -54,6 +56,10 @@ class ActorClass a where
   createActorVertices :: a -> IO (GL.VertexArrayObject, GL.BufferObject, Int)
   isInBoundary :: a -> Boundary -> Bool
 
+-- | Hasell does not usually allow instances for concrete
+-- type family application. 
+-- that's why to allow for the instances below you need 
+-- {-# LANGUAGE FlexibleInstances         #-}
 instance ActorClass (Actor 'BallTag) where
   applyCollision = undefined
   moveActor = undefined
@@ -68,6 +74,12 @@ instance ActorClass (Actor 'PaddleTag) where
   createActorVertices = undefined
   isInBoundary = undefined
 
+-- | Existential wrapper to store heterogeneous actors
+-- This says: “A @AnyActor@ can wrap up any type @a@ that
+-- has an ActorClass instance.”
+-- requires PRAGMA # ExistentialQuantification #
+data AnyActor = forall a. ActorClass a => AnyActor a
+
 --------------------------------------------
 -- Transfered from Main: original Kept Types
 --
@@ -79,6 +91,6 @@ data Boundary = Boundary
   }
 
 data GameScene = GameScene
-  { _gameScene_actors :: [Actor]
+  { _gameScene_actors :: [AnyActor]
   , _gameScene_boundary :: Boundary
   }
