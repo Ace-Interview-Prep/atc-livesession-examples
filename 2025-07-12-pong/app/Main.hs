@@ -78,8 +78,9 @@ main = do
 
   let playerBall = Ball (V2 0 0) 0.1 (V2 0.0 (-0.0005))
       otherBall = Ball (V2 0 (-0.5)) 0.1 (V2 0.0 0.0)
+      dummyPaddle = Paddle (V2 1 0) 0.1 0.3
       boundary = Boundary 0.0 0.0 0.0 0.0
-      gameScene = GameScene (Actors [playerBall, otherBall] []) boundary
+      gameScene = GameScene (Actors [playerBall, otherBall] [dummyPaddle]) boundary
 
   currentUnixTime <- getUnixTimeMillis
   gameLoop window triangleVao gameScene currentUnixTime program
@@ -159,15 +160,17 @@ gameLoop window triangleVao gameScene prevTime program = do
 
   let playerBall = head (balls $ _gameScene_actors gameScene)
       otherBall = moveActor $ balls (_gameScene_actors gameScene) !! 1
+      dummyPaddle = head (paddles $ _gameScene_actors gameScene)
       collisionOccurred = collides playerBall otherBall
       collidedBall = if collisionOccurred then applyCollision playerBall else playerBall
-      newBall = moveActor collidedBall -- gameScene
+      newBall = moveActor collidedBall 
 
   -- Log collision status
   putStrLn $ "Frame at " ++ show currentUnixTime ++ "ms: Collision " ++ if collisionOccurred then "detected" else "not detected"
 
   (ballVao, ballVbo, ballNumVertices) <- createActorVertices newBall
   (ball2Vao, ball2Vbo, ball2NumVertices) <- createActorVertices otherBall
+  (paddleVao, paddleVbo, paddleNumVertices) <- createActorVertices dummyPaddle 
 
   GL.currentProgram $= Just program
   GL.bindVertexArrayObject $= Just ballVao
@@ -176,8 +179,11 @@ gameLoop window triangleVao gameScene prevTime program = do
   GL.bindVertexArrayObject $= Just ball2Vao
   GL.drawArrays GL.TriangleFan 0 (fromIntegral ball2NumVertices)
 
+  GL.bindVertexArrayObject $= Just paddleVao
+  GL.drawArrays GL.TriangleFan 0 (fromIntegral paddleNumVertices)
+
   -- Swap buffers
   glSwapWindow window
 
-  let updatedGameScene = GameScene (Actors [newBall, otherBall] []) (_gameScene_boundary gameScene)
+  let updatedGameScene = GameScene (Actors [newBall, otherBall] [dummyPaddle]) (_gameScene_boundary gameScene)
   unless quit $ gameLoop window triangleVao updatedGameScene currentUnixTime program

@@ -33,14 +33,18 @@ class ActorClass a where
   isInBoundary :: a -> Boundary -> Bool
   createActorVertices :: a -> IO (GL.VertexArrayObject, GL.BufferObject, Int)
 
+-- | BALL
 instance ActorClass Ball where
   applyCollision (Ball pos size mv) = Ball pos size (-mv)
+  
   moveActor (Ball pos size mv) = Ball (pos + mv) size mv
+  
   isInBoundary (Ball pos size _) boundary
     =  (getX pos - size < _boundary_left boundary)
     || (getX pos + size > _boundary_right boundary)
     || (getY pos - size < _boundary_top boundary)
     || (getY pos + size > _boundary_bottom boundary)
+
   createActorVertices (Ball ballPos size _) = do
     let V2 ballX ballY = ballPos
         ballRadius = size / 2
@@ -70,27 +74,33 @@ instance ActorClass Ball where
       unwrapV2 [] = []
       unwrapV2 ((V2 x y):xs) = x : y : 0.0 : unwrapV2 xs
 
+-- | PADDLE
 instance ActorClass Paddle where
   applyCollision (Paddle pos width height) = Paddle pos width height
+  
   moveActor (Paddle pos width height) = Paddle pos width height
+  
   isInBoundary (Paddle pos width height) boundary
     =  (getX pos - width < _boundary_left boundary)
     || (getX pos + width > _boundary_right boundary)
     || (getY pos - height < _boundary_top boundary)
     || (getY pos + height > _boundary_bottom boundary)
+
   createActorVertices (Paddle pos width height) = do
-    let V2 rectX rectY = pos
-        V2 rectW rectH = V2 width height
+    let V2 centerX centerY = pos
+        halfW = width / 2
+        halfH = height / 2
 
         vertices = V.fromList $
           concatMap (\(V2 x y) -> [x, y, 0.0])
-            [ V2 rectX         rectY
-            , V2 (rectX+rectW) rectY
-            , V2 rectX         (rectY+rectH)
-            , V2 rectX         (rectY+rectH)
-            , V2 (rectX+rectW) rectY
-            , V2 (rectX+rectW) (rectY+rectH)
+            [ V2 (centerX-halfW) (centerY-halfH)
+            , V2 (centerX+halfW) (centerY-halfH)
+            , V2 (centerX-halfW) (centerY+halfH)
+            , V2 (centerX+halfW) (centerY-halfH)
+            , V2 (centerX+halfW) (centerY+halfH)
+            , V2 (centerX-halfW) (centerY+halfH)
             ]
+        -- ^ both triangles have anti-clockwise vertex order.
 
         numVertices = V.length vertices `div` 3
 
@@ -126,6 +136,9 @@ instance Collides Ball Ball where
 
 -- | TODO need to revisit this calculation, I don't think is correct.
 --   not sure if position is at the center for both or not.
+--   currently _paddle_pos :: V2 Float is interpreted as the bottom-left corner 
+--   of the paddle rectangle.
+--   CHANGED to paddle drawing with pos as center
 instance Collides Ball Paddle where
   collides (Ball posB r _) (Paddle posP w h) =
     let (xBall, yBall)     = (getX posB, getY posB)
