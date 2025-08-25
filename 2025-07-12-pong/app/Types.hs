@@ -10,8 +10,8 @@ import Foreign.Ptr
 import Helpers
 
 -- Back to ADTs after realisign that:
--- existentials give heterogeneity but force runtime checks; 
--- separate typed collections preserve compile-time type safety and performance.
+-- -1. The existentials type gives heterogeneity lists but force runtime checks; 
+-- -2. Separate typed collections preserve compile-time type safety and performance.
 -- check commit 9bb0dc1 for more notes. (or branch data-families-existential-types)
 
 data Ball = Ball
@@ -44,11 +44,9 @@ instance ActorClass Ball where
   createActorVertices (Ball ballPos size _) = do
     let V2 ballX ballY = ballPos
         ballRadius = size / 2
-        vertices
-          = V.fromList
-          $ concat [ [ballX, ballY, 0.0]
-                   ] ++ unwrapV2 (createCircleVertices ballPos ballRadius)
-        numVertices = (V.length vertices) `div` 3
+        vertices = V.fromList $
+          [ballX, ballY, 0.0] <> unwrapV2 (createCircleVertices ballPos ballRadius)
+        numVertices = V.length vertices `div` 3
 
     vao <- GL.genObjectName
     GL.bindVertexArrayObject GL.$= Just vao
@@ -85,14 +83,14 @@ instance ActorClass Paddle where
         V2 rectW rectH = V2 width height
 
         vertices = V.fromList $
-          concatMap (\(V2 x y) -> [x, y, 0.0]) $
-          [ V2 rectX         rectY
-          , V2 (rectX+rectW) rectY
-          , V2 rectX         (rectY+rectH)
-          , V2 rectX         (rectY+rectH)
-          , V2 (rectX+rectW) rectY
-          , V2 (rectX+rectW) (rectY+rectH)
-          ]
+          concatMap (\(V2 x y) -> [x, y, 0.0])
+            [ V2 rectX         rectY
+            , V2 (rectX+rectW) rectY
+            , V2 rectX         (rectY+rectH)
+            , V2 rectX         (rectY+rectH)
+            , V2 (rectX+rectW) rectY
+            , V2 (rectX+rectW) (rectY+rectH)
+            ]
 
         numVertices = V.length vertices `div` 3
 
@@ -146,7 +144,8 @@ data Actors = Actors
   }
 
 --------------------------------------------
--- Transfered from Main: original Kept Types
+-- Transfered from Main: 
+-- original Kept Types
 --
 data Boundary = Boundary
   { _boundary_left :: Float
