@@ -19,55 +19,16 @@ import Shaders (vertexShaderSource, fragmentShaderSource)
 
 import Data.Time.Clock.POSIX (getPOSIXTime)
 
-getX :: V2 a -> a
-getX (V2 x _) = x
-
-getY :: V2 a -> a
-getY (V2 _ y) = y
+import Types
+import Helpers
 
 getUnixTimeMillis :: IO Integer
 getUnixTimeMillis = do
   time <- getPOSIXTime
   return $ floor (time * 1000)
 
-data Actor
-  = Ball
-    { _ball_pos :: V2 Float
-    , _ball_size :: Float
-    , _ball_direction :: V2 Float
-    }
-  | Paddle
-    { _paddle_pos :: V2 Float
-    , _paddle_width :: Float
-    , _paddle_height :: Float
-    }
-
-data Boundary = Boundary
-  { _boundary_left :: Float
-  , _boundary_right :: Float
-  , _boundary_top :: Float
-  , _boundary_bottom :: Float
-  }
-
-isInBoundary :: Actor -> Boundary -> Bool
-isInBoundary (Ball pos size _) boundary
-  = ((getX pos) - size < _boundary_left boundary)
-  || ((getX pos) + size > _boundary_right boundary)
-  || ((getY pos) - size < _boundary_top boundary)
-  || ((getY pos) + size > _boundary_bottom boundary)
-isInBoundary (Paddle pos width height) boundary
-  = ((getX pos) - width < _boundary_left boundary)
-  || ((getX pos) + width > _boundary_right boundary)
-  || ((getY pos) - height < _boundary_top boundary)
-  || ((getY pos) + height > _boundary_bottom boundary)
-
 newtype Mass = Mass Float
 newtype Gravity = Gravity Float
-
-data GameScene = GameScene
-  { _gameScene_actors :: [Actor]
-  , _gameScene_boundary :: Boundary
-  }
 
 gravity :: Gravity
 gravity = Gravity 9.80665
@@ -89,7 +50,7 @@ main = do
                                   }
         }
 
-  putStrLn $ show (windowGraphicsContext windowConfig)
+  print (windowGraphicsContext windowConfig)
 
   windowResult <- try $ createWindow "Ping Pong" windowConfig
 
@@ -117,8 +78,9 @@ main = do
 
   let playerBall = Ball (V2 0 0) 0.1 (V2 0.0 (-0.0005))
       otherBall = Ball (V2 0 (-0.5)) 0.1 (V2 0.0 0.0)
+      dummyPaddle = Paddle (V2 0.94 0) 0.1 0.3
       boundary = Boundary 0.0 0.0 0.0 0.0
-      gameScene = GameScene [playerBall, otherBall] boundary
+      gameScene = GameScene (Actors [playerBall, otherBall] [dummyPaddle]) boundary
 
   currentUnixTime <- getUnixTimeMillis
   gameLoop window triangleVao gameScene currentUnixTime program
@@ -138,81 +100,11 @@ isQuitEvent e = case e of
     keysymKeycode (keyboardEventKeysym keyboardEvent) == KeycodeEscape
   _ -> False
 
-createActorVertices :: Actor -> IO (GL.VertexArrayObject, GL.BufferObject, Int)
-createActorVertices (Ball ballPos size _) = do
-  let V2 ballX ballY = ballPos
-      ballRadius = size / 2
-      vertices
-        = V.fromList
-        $ concat [ [ballX, ballY, 0.0]
-                 ] ++ unwrapV2 (createCircleVertices ballPos ballRadius)
-      numVertices = (V.length vertices) `div` 3
-
-  vao <- GL.genObjectName
-  GL.bindVertexArrayObject $= Just vao
-
-  vbo <- GL.genObjectName
-  GL.bindBuffer GL.ArrayBuffer $= Just vbo
-  V.unsafeWith vertices $ \ptr ->
-    GL.bufferData GL.ArrayBuffer $= (fromIntegral (V.length vertices * 4), ptr, GL.StaticDraw)
-
-  GL.vertexAttribArray (GL.AttribLocation 0) $= GL.Enabled
-  GL.vertexAttribPointer (GL.AttribLocation 0) $=
-    (GL.ToFloat, GL.VertexArrayDescriptor 3 GL.Float 0 nullPtr)
-
-  GL.bindBuffer GL.ArrayBuffer $= Nothing
-  GL.bindVertexArrayObject $= Nothing
-
-  return (vao, vbo, numVertices)
-
-  where
-    unwrapV2 :: [V2 Float] -> [Float]
-    unwrapV2 [] = []
-    unwrapV2 ((V2 x y):xs) = x : y : 0.0 : unwrapV2 xs
-createActorVertices (Paddle pos width height) = do
-  let V2 rectX rectY = pos
-      V2 rectW rectH = V2 width height
-
-      vertices = V.fromList $
-        concatMap (\(V2 x y) -> [x, y, 0.0]) $
-        [ V2 rectX         rectY
-        , V2 (rectX+rectW) rectY
-        , V2 rectX         (rectY+rectH)
-        , V2 rectX         (rectY+rectH)
-        , V2 (rectX+rectW) rectY
-        , V2 (rectX+rectW) (rectY+rectH)
-        ]
-
-      numVertices = V.length vertices `div` 3
-
-  vao <- GL.genObjectName
-  GL.bindVertexArrayObject $= Just vao
-
-  vbo <- GL.genObjectName
-  GL.bindBuffer GL.ArrayBuffer $= Just vbo
-  V.unsafeWith vertices $ \ptr ->
-    GL.bufferData GL.ArrayBuffer $= (fromIntegral (V.length vertices * 4), ptr, GL.StaticDraw)
-
-  GL.vertexAttribArray (GL.AttribLocation 0) $= GL.Enabled
-  GL.vertexAttribPointer (GL.AttribLocation 0) $=
-    (GL.ToFloat, GL.VertexArrayDescriptor 3 GL.Float 0 nullPtr)
-
-  GL.bindBuffer GL.ArrayBuffer $= Nothing
-  GL.bindVertexArrayObject $= Nothing
-
-  return (vao, vbo, numVertices)
-
-createCircleVertices :: V2 Float -> Float -> [V2 Float]
-createCircleVertices pos radius = (calculateCircumferencePoint pos radius) <$> [1..360]
-
-calculateCircumferencePoint :: V2 Float -> Float -> Int -> V2 Float
-calculateCircumferencePoint pos r th = V2 (r * (sin (fromIntegral th))) (r * (cos (fromIntegral th))) + pos
-
 createTriangleVertices :: IO (GL.VertexArrayObject, GL.BufferObject)
 createTriangleVertices = do
   let vertices = V.fromList
         [ 0.0, 0.5, 0.0
-        , (-0.5), (-0.5), 0.0
+        , -0.5, -0.5, 0.0
         , 0.5, -0.5, 0.0
         ] :: V.Vector Float
 
@@ -254,27 +146,6 @@ compileShaderFromSource shaderType source = do
     putStrLn $ "Shader compile log: " ++ log
   return shader
 
-hasCollided :: Actor -> [Actor] -> Bool
-hasCollided _ [] = False
-hasCollided (Ball pos size mv) ((Ball pos2 size2 _):bs) =
-  let
-    distanceX = (getX pos) - (getX pos2)
-    distanceY = (getY pos) - (getY pos2)
-    distance = sqrt ((distanceX ** 2) + (distanceY ** 2))
-  in
-    if distance > (size/2) + (size2/2)
-    then hasCollided (Ball pos size mv) bs
-    else True
-hasCollided _ _ = False
-
-applyCollision :: Actor -> Actor
-applyCollision (Ball pos size mv) = Ball pos size (-mv)
-applyCollision (Paddle pos width height) = Paddle pos width height
-
-moveActor :: Actor -> GameScene -> Actor
-moveActor (Ball pos size mv) scene = Ball (pos + mv) size mv
-moveActor (Paddle pos width height) scene = Paddle pos width height
-
 gameLoop :: Window -> GL.VertexArrayObject -> GameScene -> Integer -> GL.Program -> IO ()
 gameLoop window triangleVao gameScene prevTime program = do
   events <- pollEvents
@@ -287,17 +158,19 @@ gameLoop window triangleVao gameScene prevTime program = do
   GL.clearColor $= GL.Color4 0 0 0 1
   GL.clear [GL.ColorBuffer]
 
-  let playerBall = (_gameScene_actors gameScene) !! 0
-      otherBall = moveActor ((_gameScene_actors gameScene) !! 1) gameScene
-      collisionOccurred = hasCollided playerBall [otherBall]
+  let playerBall = head (balls $ _gameScene_actors gameScene)
+      otherBall = moveActor $ balls (_gameScene_actors gameScene) !! 1
+      dummyPaddle = head (paddles $ _gameScene_actors gameScene)
+      collisionOccurred = collides playerBall otherBall
       collidedBall = if collisionOccurred then applyCollision playerBall else playerBall
-      newBall = moveActor collidedBall gameScene
+      newBall = moveActor collidedBall 
 
   -- Log collision status
   putStrLn $ "Frame at " ++ show currentUnixTime ++ "ms: Collision " ++ if collisionOccurred then "detected" else "not detected"
 
   (ballVao, ballVbo, ballNumVertices) <- createActorVertices newBall
   (ball2Vao, ball2Vbo, ball2NumVertices) <- createActorVertices otherBall
+  (paddleVao, paddleVbo, paddleNumVertices) <- createActorVertices dummyPaddle 
 
   GL.currentProgram $= Just program
   GL.bindVertexArrayObject $= Just ballVao
@@ -306,8 +179,11 @@ gameLoop window triangleVao gameScene prevTime program = do
   GL.bindVertexArrayObject $= Just ball2Vao
   GL.drawArrays GL.TriangleFan 0 (fromIntegral ball2NumVertices)
 
+  GL.bindVertexArrayObject $= Just paddleVao
+  GL.drawArrays GL.TriangleFan 0 (fromIntegral paddleNumVertices)
+
   -- Swap buffers
   glSwapWindow window
 
-  let updatedGameScene = GameScene [newBall, otherBall] (_gameScene_boundary gameScene)
+  let updatedGameScene = GameScene (Actors [newBall, otherBall] [dummyPaddle]) (_gameScene_boundary gameScene)
   unless quit $ gameLoop window triangleVao updatedGameScene currentUnixTime program
