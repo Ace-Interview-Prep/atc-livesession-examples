@@ -78,7 +78,7 @@ main = do
 
   let playerBall = Ball (V2 0 0) 0.1 (V2 0.0 (-0.0005))
       otherBall = Ball (V2 0 (-0.5)) 0.1 (V2 0.0 0.0)
-      dummyPaddle = Paddle (V2 1 0) 0.1 0.3
+      dummyPaddle = Paddle (V2 0.94 0) 0.1 0.3
       boundary = Boundary 0.0 0.0 0.0 0.0
       gameScene = GameScene (Actors [playerBall, otherBall] [dummyPaddle]) boundary
 

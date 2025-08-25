@@ -121,7 +121,8 @@ instance ActorClass Paddle where
 
     return (vao, vbo, numVertices)
 
--- | multiparam typeclasses pragma makes this possible - 
+-- | MultiParamTypeClasses pragma makes this possible:
+--   \/\/\/\/\/\/\/\/\/\/\/
 class Collides a b where
   collides :: a -> b -> Bool
 
@@ -134,19 +135,15 @@ instance Collides Ball Ball where
     in
       (distance <= ((size / 2) + (size2 / 2))) || False 
 
--- | TODO need to revisit this calculation, I don't think is correct.
---   not sure if position is at the center for both or not.
---   currently _paddle_pos :: V2 Float is interpreted as the bottom-left corner 
---   of the paddle rectangle.
---   CHANGED to paddle drawing with pos as center
+-- | Changed paddle drawing with pos as center.
+--   TODO: not tested.
 instance Collides Ball Paddle where
   collides (Ball posB r _) (Paddle posP w h) =
     let (xBall, yBall)     = (getX posB, getY posB)
         (xPaddle, yPaddle) = (getX posP, getY posP)
-    in xBall+r >= xPaddle   && 
-       xBall-r <= xPaddle+w && 
-       yBall+r >= yPaddle   && 
-       yBall-r <= yPaddle+h
+        minDistX = min r w 
+        minDistY = min r h
+     in abs (xBall-xPaddle) <= minDistX && abs (yBall-yPaddle) <= minDistY
 
 instance Collides Paddle Ball where
   collides = flip collides
@@ -156,7 +153,7 @@ data Actors = Actors
   , paddles :: [Paddle]
   }
 
---------------------------------------------
+------------------------
 -- Transfered from Main: 
 -- original Kept Types
 --
