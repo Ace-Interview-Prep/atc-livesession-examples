@@ -50,7 +50,7 @@ main = do
                                   }
         }
 
-  putStrLn $ show (windowGraphicsContext windowConfig)
+  print (windowGraphicsContext windowConfig)
 
   windowResult <- try $ createWindow "Ping Pong" windowConfig
 
@@ -79,7 +79,7 @@ main = do
   let playerBall = Ball (V2 0 0) 0.1 (V2 0.0 (-0.0005))
       otherBall = Ball (V2 0 (-0.5)) 0.1 (V2 0.0 0.0)
       boundary = Boundary 0.0 0.0 0.0 0.0
-      gameScene = GameScene [playerBall, otherBall] boundary
+      gameScene = GameScene (Actors [playerBall, otherBall] []) boundary
 
   currentUnixTime <- getUnixTimeMillis
   gameLoop window triangleVao gameScene currentUnixTime program
@@ -103,7 +103,7 @@ createTriangleVertices :: IO (GL.VertexArrayObject, GL.BufferObject)
 createTriangleVertices = do
   let vertices = V.fromList
         [ 0.0, 0.5, 0.0
-        , (-0.5), (-0.5), 0.0
+        , -0.5, -0.5, 0.0
         , 0.5, -0.5, 0.0
         ] :: V.Vector Float
 
@@ -157,11 +157,11 @@ gameLoop window triangleVao gameScene prevTime program = do
   GL.clearColor $= GL.Color4 0 0 0 1
   GL.clear [GL.ColorBuffer]
 
-  let playerBall = (_gameScene_actors gameScene) !! 0
-      otherBall = moveActor ((_gameScene_actors gameScene) !! 1) gameScene
-      collisionOccurred = hasCollided playerBall [otherBall]
+  let playerBall = head (balls $ _gameScene_actors gameScene)
+      otherBall = moveActor $ balls (_gameScene_actors gameScene) !! 1
+      collisionOccurred = collides playerBall otherBall
       collidedBall = if collisionOccurred then applyCollision playerBall else playerBall
-      newBall = moveActor collidedBall gameScene
+      newBall = moveActor collidedBall -- gameScene
 
   -- Log collision status
   putStrLn $ "Frame at " ++ show currentUnixTime ++ "ms: Collision " ++ if collisionOccurred then "detected" else "not detected"
@@ -179,5 +179,5 @@ gameLoop window triangleVao gameScene prevTime program = do
   -- Swap buffers
   glSwapWindow window
 
-  let updatedGameScene = GameScene [newBall, otherBall] (_gameScene_boundary gameScene)
+  let updatedGameScene = GameScene (Actors [newBall, otherBall] []) (_gameScene_boundary gameScene)
   unless quit $ gameLoop window triangleVao updatedGameScene currentUnixTime program
