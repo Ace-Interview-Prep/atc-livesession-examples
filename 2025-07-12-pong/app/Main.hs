@@ -14,6 +14,7 @@ import Data.ByteString (ByteString)
 import GHC.Int
 import qualified Graphics.Rendering.OpenGL as GL
 import qualified Data.Vector.Storable as V
+import qualified Debug.Trace as DT
 import Graphics.Rendering.OpenGL.GL.CoordTrans
 import Shaders (vertexShaderSource, fragmentShaderSource)
 
@@ -35,7 +36,8 @@ data Ball
     { _ball_pos :: V2 Float
     , _ball_size :: Float
     , _ball_velocity :: V2 Float
-    }
+    , _label :: String
+    } deriving Show
   -- | Paddle
   --   { _paddle_pos :: V2 Float
   --   , _paddle_width :: Float
@@ -50,7 +52,7 @@ data Boundary = Boundary
   }
 
 isInBoundary :: Ball -> Boundary -> Bool
-isInBoundary (Ball pos size _) boundary
+isInBoundary (Ball pos size _ _) boundary
   = ((getX pos) - size < _boundary_left boundary)
   || ((getX pos) + size > _boundary_right boundary)
   || ((getY pos) - size < _boundary_top boundary)
@@ -115,15 +117,15 @@ main = do
 
   (triangleVao, triangleVbo) <- createTriangleVertices
 
-  let playerVelocity = V2 0.0 (-0.5)
-      otherBallVelocity = V2 0.0 0.0
+  let playerVelocity = V2 0.0 (-0.05)
+      otherBallVelocity = V2 0.0 (0.05)
       playerSize = 0.1
       otherBallSize = 0.1
       playerStartPos = V2 0 0
       otherBallStartPos = V2 0 (-0.5)
 
-      playerBall = Ball playerStartPos playerSize playerVelocity
-      otherBall = Ball otherBallStartPos otherBallSize otherBallVelocity
+      playerBall = Ball playerStartPos playerSize playerVelocity "Player"
+      otherBall = Ball otherBallStartPos otherBallSize otherBallVelocity "Other"
       boundary = Boundary 0.0 0.0 0.0 0.0
       gameScene = GameScene [playerBall, otherBall] boundary
 
@@ -160,23 +162,20 @@ normalizeV2 v =
 scalarMultiply :: V2 Float -> Float -> V2 Float
 scalarMultiply (V2 vx vy) s = V2 (vx * s) (vy * s)
 
-
--- TODO: Create these functions:
--- calculateBounce -- multiply velocity by dot product, assume 1:1 mass relationship
 calculateBounceVelocity :: Ball -> Ball -> V2 Float
-calculateBounceVelocity (Ball ballPos1 _ ballVel1) (Ball ballPos2 _ ballVel2) =
-  let collisionVector = ballPos2 - ballPos1
-      perpendicularVector = perpendicularV2 collisionVector
-      normalVector = normalizeV2 perpendicularVector
-      dotProduct = (getX ballVel1) * (getX normalVector) + (getY ballVel1) * (getY normalVector)
+calculateBounceVelocity (Ball ballPos1 _ ballVel1 _) (Ball ballPos2 _ ballVel2 _) =
+  let
+    collisionVector   = ballPos2 - ballPos1
+    normalVector      = normalizeV2 collisionVector
+    relativeVelocity  = ballVel1 - ballVel2
+    dotProduct        = (getX relativeVelocity) * (getX normalVector) + (getY relativeVelocity) * (getY normalVector)
+    velocityChange    = scalarMultiply normalVector (2 * dotProduct)
   in
-    ballVel1 - (scalarMultiply normalVector (2 * dotProduct))
+    ballVel1 - velocityChange
 
-
---calculateBounce actor1 actor2 =
 
 createBallVertices :: Ball -> IO (GL.VertexArrayObject, GL.BufferObject, Int)
-createBallVertices (Ball ballPos size _) = do
+createBallVertices (Ball ballPos size _ _) = do
   let V2 ballX ballY = ballPos
       ballRadius = size / 2
       vertices
@@ -262,26 +261,26 @@ compileShaderFromSource shaderType source = do
 
 hasCollided :: Ball -> [Ball] -> Bool
 hasCollided _ [] = False
-hasCollided (Ball pos size mv) ((Ball pos2 size2 _):bs) =
+hasCollided (Ball pos size mv label) ((Ball pos2 size2 _ _):bs) =
   let
     distanceX = (getX pos) - (getX pos2)
     distanceY = (getY pos) - (getY pos2)
     distance = sqrt ((distanceX ** 2) + (distanceY ** 2))
   in
     if distance > (size/2) + (size2/2)
-    then hasCollided (Ball pos size mv) bs
+    then hasCollided (Ball pos size mv label) bs
     else True
 hasCollided _ _ = False
 
 applyCollision :: Ball -> Ball -> Ball
-applyCollision ball1@(Ball pos size mv) ball2@(Ball pos2 size2 mv2) =
+applyCollision ball1@(Ball pos size mv label1) ball2@(Ball pos2 size2 mv2 label2) =
   let newVelocity = calculateBounceVelocity ball1 ball2
-  in Ball pos size newVelocity
+  in Ball pos size newVelocity' label1
 
 moveBall :: Ball -> GameScene -> Float -> Ball
-moveBall (Ball pos size (V2 velX velY)) scene timeDelta =
+moveBall (Ball pos size (V2 velX velY) label) scene timeDelta =
   let movementVector = V2 (velX * timeDelta) (velY * timeDelta)
-  in Ball (pos + movementVector) size (V2 velX velY)
+  in Ball (pos + movementVector) size (V2 velX velY) label
 
 gameLoop :: Window -> GL.VertexArrayObject -> GameScene -> Integer -> GL.Program -> IO ()
 gameLoop window triangleVao gameScene prevTime program = do
@@ -301,15 +300,17 @@ gameLoop window triangleVao gameScene prevTime program = do
       otherBall = moveBall ((_gameScene_actors gameScene) !! 1) gameScene timeDelta
       collisionOccurred = hasCollided playerBall [otherBall]
       collidedBall = if collisionOccurred then applyCollision playerBall otherBall else playerBall
+      collidedBall' = if collisionOccurred then applyCollision otherBall playerBall else otherBall
       newBall = moveBall collidedBall gameScene timeDelta
+      newBall2 = moveBall collidedBall' gameScene timeDelta
 
   -- Log collision status
-  putStrLn $ "Frame at " ++ show currentUnixTime ++ "ms: Collision " ++ if collisionOccurred then "detected" else "not detected"
-  putStrLn $ "calculateBounceVelocity ball1 ball2" ++ show (calculateBounceVelocity playerBall otherBall)
+  --putStrLn $ "Frame at " ++ show currentUnixTime ++ "ms: Collision " ++ if collisionOccurred then "detected" else "not detected"
+  --putStrLn $ "calculateBounceVelocity ball1 ball2" ++ show (calculateBounceVelocity playerBall otherBall)
 
 
   (ballVao, ballVbo, ballNumVertices) <- createBallVertices newBall
-  (ball2Vao, ball2Vbo, ball2NumVertices) <- createBallVertices otherBall
+  (ball2Vao, ball2Vbo, ball2NumVertices) <- createBallVertices newBall2
 
   GL.currentProgram $= Just program
   GL.bindVertexArrayObject $= Just ballVao
@@ -321,5 +322,5 @@ gameLoop window triangleVao gameScene prevTime program = do
   -- Swap buffers
   glSwapWindow window
 
-  let updatedGameScene = GameScene [newBall, otherBall] (_gameScene_boundary gameScene)
+  let updatedGameScene = GameScene [newBall, newBall2] (_gameScene_boundary gameScene)
   unless quit $ gameLoop window triangleVao updatedGameScene currentUnixTime program
