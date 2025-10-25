@@ -24,14 +24,10 @@ executable pingpong
                     , vector
                     , bytestring
                     , time
-                    -- >= 1.19 && < 1.21
                     , linear
                     , text
                     , hashtables
-                    -- , transformers
-                    --  == 2.2.5
-                    --, graphics-gpipe
-                    -- >= 1.6 && < 1.8
+                    , GPipe
                     , GPipe-GLFW
 
     hs-source-dirs:   app

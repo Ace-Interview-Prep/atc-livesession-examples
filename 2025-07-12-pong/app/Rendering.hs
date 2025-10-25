@@ -1,6 +1,6 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeApplications, NamedFieldPuns #-}
 
 module Rendering
   ( Renderable (..)
@@ -20,7 +20,9 @@ module Rendering
 import Control.Monad (forM_)
 import Data.Foldable (toList)
 import Data.Word (Word32)
-import Graphics.GPipe
+import Graphics.GPipe hiding (newVertexArray)
+import Graphics.GPipe.Buffer (bufBElement)
+import Graphics.GPipe.PrimitiveArray (VertexArray (..))
 import qualified Graphics.GPipe.Context.GLFW as GLFW
 
 data RenderableData os = RenderableData
@@ -36,7 +38,6 @@ class Renderable a where
 data Scene os = Scene
   { _renderables :: [RenderableData os]
   }
-
 
 data Renderer os = Renderer
   { win :: Window os RGBAFloat ()
@@ -56,7 +57,7 @@ initRenderer (V2 w h) = do
 
   shader <- compileShader $ do
     prims <- toPrimitiveStream fst
-    utrans :: V2 (S Float) <- getUniform snd
+    utrans <- getUniform snd
 
     let prims4 = fmap (\(V2 x y) -> V4 (x + utrans^._x) (y + utrans^._y) 0 1) prims
 
@@ -74,31 +75,36 @@ destroyAll Renderer{win} = deleteWindow win
 
 renderScene :: Renderer os-> Scene os -> ContextT GLFW.Handle os IO ()
 renderScene Renderer{win, shader} (Scene rs) = do
-  clearWindowColor win 0
+  render $ clearWindowColor win 0
   forM_ rs $ \RenderableData{ primArray, origin } -> do
     u <- newBuffer 1
     writeBuffer u 0 [origin]
-    shader (primArray, u)
+    render $ shader (primArray, u)
   swapWindowBuffers win
 
 
 type GLFWContext os a = ContextT GLFW.Handle os IO a
 
-createRenderableFromCircle :: Renderer os -> [V2 Float] -> V2 Float -> GLFWContext os (RenderableData os)
-createRenderableFromCircle _ localVerts origin = do
+
+createVertexBufferFromCircle :: Renderer os -> [V2 Float] -> V2 Float -> GLFWContext os (RenderableData os)
+createVertexBufferFromCircle _ localVerts origin = do
   buf <- newBuffer (length localVerts)
   writeBuffer buf 0 localVerts
 
-  let primArray = toPrimitiveArray TriangleList (takeVertices buf)
+  let vertexArray = newVertexArray buf
+      primArray = toPrimitiveArray TriangleList vertexArray
+
   pure RenderableData
     { origin
     , localVerts
     , buf
     , primArray
     }
-  where
-    takeVertices :: Buffer os (B2 Float) -> B2 Float
-    takeVertices = id
+
+
+
+newVertexArray :: Buffer os a -> VertexArray t a
+newVertexArray buffer = VertexArray (bufferLength buffer) 0 $ bufBElement buffer
 
 
 translation2D :: RenderableData os -> V2 Float -> RenderableData os

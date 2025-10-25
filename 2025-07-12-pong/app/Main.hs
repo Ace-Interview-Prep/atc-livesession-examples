@@ -111,10 +111,16 @@ buildInitialScene renderer gameState = do
       otherBall = (_gameState_actors gameState) !! 1
       circleVerts = mkCircleVerts (playerSize / 2) 64
 
-  playerR <- createRenderableFromCircle renderer circleVerts (_ball_pos playerBall)
-  otherR <- createRenderableFromCircle renderer circleVerts (_ball_pos otherBall)
+  playerR <- createVertexBufferFromCircle renderer (_ball_pos playerBall)
+  otherR <- createVertexBufferFromCircle renderer (_ball_pos otherBall)
 
   pure $ Scene [playerR, otherR]
+
+
+myRenderFunc :: [RenderableData] -> Render os ()
+myRenderFunc renderables = (newVertexArray . buf <$> renderables)
+
+
 
 updateScene :: Scene os -> GameState -> Scene os
 updateScene scene gs =
