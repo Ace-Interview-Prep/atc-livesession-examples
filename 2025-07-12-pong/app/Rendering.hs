@@ -12,18 +12,18 @@ module Rendering
   , renderScene
   , destroyAll
 
-  , createRenderableFromCircle
+  , triangulateFan
+  , mkCircleVerts
+  , createVertexBufferFromCircle
   , translation2D
   ) where
 
 
 import Control.Monad (forM_)
-import Data.Foldable (toList)
-import Data.Word (Word32)
 import Graphics.GPipe hiding (newVertexArray)
-import Graphics.GPipe.Buffer (bufBElement)
-import Graphics.GPipe.PrimitiveArray (VertexArray (..))
+import Graphics.GPipe.PrimitiveArray()
 import qualified Graphics.GPipe.Context.GLFW as GLFW
+import Control.Lens.Getter ((^.))
 
 data RenderableData os = RenderableData
   { origin :: V2 Float
@@ -42,31 +42,40 @@ data Scene os = Scene
 data Renderer os = Renderer
   { win :: Window os RGBAFloat ()
   , shader :: CompiledShader os ( PrimitiveArray Triangles (B2 Float)
-                                , Buffer os (Uniform (B2 Float)) )
+                                , (Buffer os (Uniform (B2 Float)), Int)
+                                )
   }
 
 initRenderer
   :: V2 Int
   -> ContextT GLFW.Handle os IO (Renderer os)
 initRenderer (V2 w h) = do
-  let wc = (GLFW.defaultWindowConfig "GPipe Ping Pong")
-        { GLFW.configWidth = w
-        , GLFW.configHeight = h
-        }
-  win <- newWindow wc RGB8
+  -- let wc = (GLFW.defaultWindowConfig "GPipe Ping Pong")
+  --       { GLFW.configWidth = w
+  --       , GLFW.configHeight = h
+  --       }
+
+  win <- newWindow (WindowFormatColor RGBA8) (GLFW.defaultWindowConfig "GPipe Ping Pong")
 
   shader <- compileShader $ do
     prims <- toPrimitiveStream fst
+
     utrans <- getUniform snd
 
-    let prims4 = fmap (\(V2 x y) -> V4 (x + utrans^._x) (y + utrans^._y) 0 1) prims
+    let prims4 = fmap (\(V2 x y) ->
+                         ( V4 (x + utrans^._x) (y + utrans^._y) 0 1
+                         , V4 1 1 1 1 :: V4 VFloat  -- fragment color (RGBA)
+                         )
+                      ) prims
 
     -- Rasterize with default 2D settings (no depth, no culling)
-    frags <- rasterize (const (FrontAndBack, PolygonFill, NoOffset, (V2 0 0, V2 1 1))) prims4
+    let viewport = ViewPort (V2 0 0) (V2 w h)
+    frags <- rasterize (const (Front, viewport, DepthRange 0 1)) prims4
 
     -- Set fragment color
-    let colors = pure (V4 1 1 1 1) <$ frags
-    drawWindowColor (const (win, ContextColorOption NoBlending (V4 True True True True))) colors
+    --let colors = pure (V4 1 1 1 1) <$ frags
+    --drawWindowColor (const (win, ContextColorOption NoBlending (V4 True True True True))) colors
+    drawWindowColor (const (win, ContextColorOption NoBlending (V4 True True True True))) frags
 
   pure Renderer{ win, shader }
 
@@ -77,9 +86,9 @@ renderScene :: Renderer os-> Scene os -> ContextT GLFW.Handle os IO ()
 renderScene Renderer{win, shader} (Scene rs) = do
   render $ clearWindowColor win 0
   forM_ rs $ \RenderableData{ primArray, origin } -> do
-    u <- newBuffer 1
+    (u :: Buffer os (Uniform (B2 Float))) <- newBuffer 1
     writeBuffer u 0 [origin]
-    render $ shader (primArray, u)
+    render $ shader (primArray, (u, 0))
   swapWindowBuffers win
 
 

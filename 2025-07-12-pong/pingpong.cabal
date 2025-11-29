@@ -29,6 +29,7 @@ executable pingpong
                     , hashtables
                     , GPipe
                     , GPipe-GLFW
+                    , lens
 
     hs-source-dirs:   app
     default-language: Haskell2010
