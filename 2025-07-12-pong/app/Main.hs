@@ -5,9 +5,10 @@
 module Main where
 
 import Control.Monad (unless)
-import Data.IORef
+import Control.Monad.IO.Class
+import Data.Maybe
 import Data.Time.Clock.POSIX (getPOSIXTime)
-import Graphics.GPipe
+import Graphics.GPipe hiding (distance)
 import qualified Graphics.GPipe.Context.GLFW as GLFW
 
 import Rendering
@@ -21,12 +22,15 @@ getUnixTimeMillis :: IO Integer
 getUnixTimeMillis = floor . (*1000) <$> getPOSIXTime
 
 
-
 data GameState = GameState
   { _gameState_actors :: [Ball]
   }
 
+getX :: V2 a -> a
+getX (V2 x _) = x
 
+getY :: V2 a -> a
+getY (V2 _ y) = y
 
 absV2 :: V2 Float -> V2 Float
 absV2 (V2 x y) = V2 (abs x) (abs y)
@@ -65,16 +69,15 @@ hasCollided (Ball pos size mv label) ((Ball pos2 size2 _ _):bs) =
     if distance > (size/2) + (size2/2)
     then hasCollided (Ball pos size mv label) bs
     else True
-hasCollided _ _ = False
 
 
 applyCollision :: Ball -> Ball -> Ball
-applyCollision ball1@(Ball pos size mv label1) ball2@(Ball pos2 size2 mv2 label2) =
+applyCollision ball1@(Ball pos size _ label) ball2 =
   let newVelocity = calculateBounceVelocity ball1 ball2
-  in Ball pos size newVelocity label1
+  in Ball pos size newVelocity label
 
-moveBall :: Ball -> GameState -> Float -> Ball
-moveBall (Ball pos size (V2 velX velY) label) state timeDelta =
+moveBall :: Ball -> Float -> Ball
+moveBall (Ball pos size (V2 velX velY) label) timeDelta =
   let movementVector = V2 (velX * timeDelta) (velY * timeDelta)
   in Ball (pos + movementVector) size (V2 velX velY) label
 
@@ -86,15 +89,16 @@ runGameStep gameState timeDelta =
       collisionOccurred = hasCollided playerBall [otherBall]
       collidedBall = if collisionOccurred then applyCollision playerBall otherBall else playerBall
       collidedBall' = if collisionOccurred then applyCollision otherBall playerBall else otherBall
-      newBall = moveBall collidedBall gameState timeDelta
-      newBall2 = moveBall collidedBall' gameState timeDelta
+      newBall = moveBall collidedBall timeDelta
+      newBall2 = moveBall collidedBall' timeDelta
   in
-    GameState [newBall, newBall2] (_gameState_boundary gameState)
+    GameState [newBall, newBall2]
+
 
 initialGameState :: GameState
 initialGameState =
-  let playerVel = V2 0.0 0.1
-      otherVel = V2 0.0 (-0.1)
+  let playerVel = V2 0.0 (-0.1)
+      otherVel = V2 0.0 (0.1)
       playerSize = 0.1
       otherSize = 0.1
       playerStartPos = V2 0 0
@@ -109,18 +113,13 @@ buildInitialScene :: Renderer os -> GameState -> ContextT GLFW.Handle os IO (Sce
 buildInitialScene renderer gameState = do
   let playerBall = (_gameState_actors gameState) !! 0
       otherBall = (_gameState_actors gameState) !! 1
-      circleVerts = mkCircleVerts (playerSize / 2) 64
+      playerVerts = mkCircleVerts ((_ball_size playerBall) / 2) 64
+      otherVerts = mkCircleVerts ((_ball_size otherBall) / 2) 64
 
-  playerR <- createVertexBufferFromCircle renderer (_ball_pos playerBall)
-  otherR <- createVertexBufferFromCircle renderer (_ball_pos otherBall)
+  playerR <- createVertexBufferFromCircle renderer playerVerts (_ball_pos playerBall)
+  otherR <- createVertexBufferFromCircle renderer otherVerts (_ball_pos otherBall)
 
   pure $ Scene [playerR, otherR]
-
-
-myRenderFunc :: [RenderableData] -> Render os ()
-myRenderFunc renderables = (newVertexArray . buf <$> renderables)
-
-
 
 updateScene :: Scene os -> GameState -> Scene os
 updateScene scene gs =
@@ -134,8 +133,7 @@ updateScene scene gs =
 
 gameLoop :: Renderer os -> Scene os -> GameState -> Integer -> ContextT GLFW.Handle os IO ()
 gameLoop renderer scene gameState prevTime = do
-  GLFW.pollEvents
-  shouldClose <- GLFW.windowShouldClose (win renderer)
+  shouldClose <- fromMaybe False <$> GLFW.windowShouldClose (win renderer)
 
   currentTime <- liftIO getUnixTimeMillis
   let timeDelta = realToFrac (currentTime - prevTime) / 1000.0 :: Float
@@ -153,12 +151,11 @@ gameLoop renderer scene gameState prevTime = do
       updatedGameState
       currentTime
 
-
 main :: IO ()
 main = runContextT GLFW.defaultHandleConfig $ do
   renderer <- initRenderer (V2 screenW screenH)
-  initialScene <- buildInitialScene renderer
-  startTime <- liftIO getUnitTimeMillis
+  initialScene <- buildInitialScene renderer initialGameState
+  startTime <- liftIO getUnixTimeMillis
 
   gameLoop
     renderer
@@ -167,214 +164,3 @@ main = runContextT GLFW.defaultHandleConfig $ do
     startTime
 
   destroyAll renderer
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
--- import SDL hiding (createWindow, origin)
--- import SDL.Video.OpenGL (glCreateContext)
--- import Prelude hiding (log)
--- import Foreign.Ptr
--- import Foreign.C.Types (CInt)
--- import Control.Exception (SomeException, try, throwIO)
--- import Control.Monad (unless, void)
--- import Data.ByteString (ByteString)
--- import GHC.Int
--- import qualified Graphics.Rendering.OpenGL as GL
--- import qualified Data.Vector.Storable as V
--- import qualified Debug.Trace as DT
--- import Graphics.Rendering.OpenGL.GL.CoordTrans
--- import Shaders (vertexShaderSource, fragmentShaderSource, createShaderProgram)
--- import Window (createWindow)
--- import Data.Time.Clock.POSIX (getPOSIXTime)
--- import qualified Linear.V2 as L
--- import Data.IORef
-
--- import Debug.Trace as DT
-
--- import Ball
--- import Rendering
--- import qualified Rendering as R
-
--- gravity :: Gravity
--- gravity = Gravity 9.80665
-
--- screenWidth :: (Num a) => a
--- screenWidth = 800
-
--- screenHeight :: (Num a) => a
--- screenHeight = 800
-
--- windowConfig :: WindowConfig
--- windowConfig = defaultWindow
---                { windowInitialSize = V2 screenWidth screenHeight
---                , windowGraphicsContext = OpenGLContext defaultOpenGL
---                                          { glProfile = Core Normal 3 3
---                                          }
---                }
-
--- main :: IO ()
--- main = do
---   SDL.initializeAll
---   window <- createWindow windowConfig "Ping Pong"
---   glContext <- createGLContext window
---   setViewport (Position 0 0) (Size screenWidth screenHeight)
---   program <- createShaderProgram
---   setShaderProgram program
-
---   let playerVelocity = V2 0.0 (0.1)
---       otherBallVelocity = V2 0.0 (-0.1)
---       playerSize = 0.1
---       otherBallSize = 0.1
---       playerStartPos = V2 0 0
---       otherBallStartPos = V2 0 (-0.5)
-
---       playerBall = Ball playerStartPos playerSize playerVelocity "Player"
---       otherBall = Ball otherBallStartPos otherBallSize otherBallVelocity "Other"
---       boundary = Boundary 0.0 0.0 0.0 0.0
---       gameState = GameState [playerBall, otherBall] boundary
---       scene = Scene []
-
---   -- Create initial renderables
---   playerBallR <- createRenderable playerBall
---   otherBallR <- createRenderable otherBall
-
---   let scene = Scene [ playerBallR
---                     , otherBallR
---                     ]
-
---   modelLoc <- GL.get $ GL.uniformLocation program "uModel"
---   let render = renderScene window program modelLoc
-
---   currentUnixTime <- getUnixTimeMillis
-
---   finalScene <- gameLoop render scene gameState currentUnixTime
---   let vaos = vao <$> (_renderables finalScene)
---       vbos = vbo <$> (_renderables finalScene)
-
---   R.destroyAll window glContext [program] vaos vbos
---   quit
-
--- isQuitEvent :: EventPayload -> Bool
--- isQuitEvent e = case e of
---   QuitEvent -> True
---   KeyboardEvent keyboardEvent ->
---     keyboardEventKeyMotion keyboardEvent == Pressed &&
---     keysymKeycode (keyboardEventKeysym keyboardEvent) == KeycodeEscape
---   _ -> False
-
-
-
-
--- runRenderScene :: R.Scene -> GameState -> R.Scene
--- runRenderScene scene gameState =
---   let newBall = (_gameState_actors gameState) !! 0
---       newBall2 = (_gameState_actors gameState) !! 1
---       updatedPlayerBallR = ((_renderables scene) !! 0) { origin = _ball_pos newBall }
---       updatedOtherBallR = ((_renderables scene) !! 1) { origin = _ball_pos newBall2 }
---   in
---     R.Scene [updatedPlayerBallR, updatedOtherBallR]
-
-
--- gameLoop :: (R.Scene -> IO ()) -> R.Scene -> GameState -> Integer -> IO (R.Scene)
--- gameLoop render scene gameState prevTime = do
---   events <- pollEvents
---   currentUnixTime <- getUnixTimeMillis
-
---   let quit = any (isQuitEvent . eventPayload) events
---       timeDelta = (fromInteger (currentUnixTime - prevTime)) / 1000
-
---   -- Run game step
---   case quit of
---     False -> do
---       let updatedGameState = runGameStep gameState timeDelta
---           updatedScene = runRenderScene scene updatedGameState
-
---       render updatedScene
---       gameLoop render updatedScene updatedGameState currentUnixTime
-
---     True ->
---       return scene
-
-
--- getX :: V2 a -> a
--- getX (V2 x _) = x
-
--- getY :: V2 a -> a
--- getY (V2 _ y) = y
-
--- getUnixTimeMillis :: IO Integer
--- getUnixTimeMillis = do
---   time <- getPOSIXTime
---   return $ floor (time * 1000)
-
--- data Boundary = Boundary
---   { _boundary_left :: Float
---   , _boundary_right :: Float
---   , _boundary_top :: Float
---   , _boundary_bottom :: Float
---   }
-
--- isInBoundary :: Ball -> Boundary -> Bool
--- isInBoundary (Ball pos size _ _) boundary
---   = ((getX pos) - size < _boundary_left boundary)
---   || ((getX pos) + size > _boundary_right boundary)
---   || ((getY pos) - size < _boundary_top boundary)
---   || ((getY pos) + size > _boundary_bottom boundary)
-
--- newtype Mass = Mass Float
--- newtype Gravity = Gravity Float
-
--- data GameState = GameState
---   { _gameState_actors :: [Ball]
---   , _gameState_boundary :: Boundary
---   }
