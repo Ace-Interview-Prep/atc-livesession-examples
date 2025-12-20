@@ -7,7 +7,7 @@ import Rendering
   ( Renderer
   , Renderable(..)
   , RenderableData
-  , createVertexBufferFromCircle
+  , createVertexBufferFromVerts
   , mkCircleVerts
   )
 import Graphics.GPipe
@@ -32,4 +32,4 @@ instance Renderable Ball where
         radius = _ball_size ball / 2
         circleVerts = mkCircleVerts radius 64
 
-    createVertexBufferFromCircle renderer circleVerts pos
+    createVertexBufferFromVerts renderer circleVerts pos

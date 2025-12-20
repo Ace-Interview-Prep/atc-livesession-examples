@@ -12,8 +12,8 @@ module Rendering
   , destroyAll
   , triangulateFan
   , mkCircleVerts
-  , createVertexBufferFromCircle
-  , createVertexBufferFromTriangle
+  , mkRectangleVerts
+  , createVertexBufferFromVerts
   , translation2D
   ) where
 
@@ -71,7 +71,7 @@ initRenderer (V2 w h) = do
 
     -- Rasterize with default 2D settings (no depth, no culling)
     let viewport = ViewPort (V2 0 0) (V2 w h)
-    frags <- rasterize (const (Back, viewport, DepthRange 0 1)) prims4
+    frags <- rasterize (const (Front, viewport, DepthRange 0 1)) prims4
 
     -- Set fragment color
     drawWindowColor (const (win, ContextColorOption NoBlending (V4 True True True True))) frags
@@ -90,8 +90,9 @@ renderScene Renderer{win, shader} (Scene rs) = do
     render $ shader (primArray, (u, 0))
   swapWindowBuffers win
 
-createVertexBufferFromCircle :: Renderer os -> [V2 Float] -> V2 Float -> GLFWContext os (RenderableData os)
-createVertexBufferFromCircle _ localVerts origin = do
+
+createVertexBufferFromVerts :: Renderer os -> [V2 Float] -> V2 Float -> GLFWContext os (RenderableData os)
+createVertexBufferFromVerts _ localVerts origin = do
   buf <- newBuffer (length localVerts)
   writeBuffer buf 0 localVerts
 
@@ -105,27 +106,6 @@ createVertexBufferFromCircle _ localVerts origin = do
     , primArray
     }
 
-createVertexBufferFromTriangle :: Renderer os -> V2 Float -> GLFWContext os (RenderableData os)
-createVertexBufferFromTriangle _ origin = do
-  -- Three points of a basic triangle (centered-ish)
-  let localVerts =
-        [ V2   0.0   0.05   -- top
-        , V2 (-0.05) (-0.05) -- bottom-left
-        , V2   0.05  (-0.05) -- bottom-right
-        ]
-
-  buf <- newBuffer (length localVerts)
-  writeBuffer buf 0 localVerts
-
-  let vertexArray = newVertexArray buf
-      primArray   = toPrimitiveArray TriangleList vertexArray
-
-  pure RenderableData
-    { origin
-    , localVerts
-    , buf
-    , primArray
-    }
 
 newVertexArray :: Buffer os a -> VertexArray t a
 newVertexArray buffer = VertexArray (bufferLength buffer) 0 $ bufBElement buffer
@@ -155,4 +135,11 @@ mkCircleVerts radius steps =
                | i <- [0 .. steps-1]
                , let t = fromIntegral i * (2*pi / fromIntegral steps)
                ]
-  in triangulateFan (center : rim)
+  in triangulateFan (reverse (center : rim))
+
+
+mkRectangleVerts :: Float -> Float -> [V2 Float]
+mkRectangleVerts width height =
+  [ V2 0.0 0.0, V2 width 0.0, V2 width height
+  , V2 width height, V2 0.0 height, V2 0.0 0.0
+  ]

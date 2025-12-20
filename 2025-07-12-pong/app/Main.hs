@@ -1,6 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Main where
 
@@ -13,6 +16,7 @@ import qualified Graphics.GPipe.Context.GLFW as GLFW
 
 import Rendering
 import Ball
+import Paddle
 
 screenW, screenH :: Int
 screenW = 800
@@ -22,9 +26,26 @@ getUnixTimeMillis :: IO Integer
 getUnixTimeMillis = floor . (*1000) <$> getPOSIXTime
 
 
+paddleMovementSpeed :: Float
+paddleMovementSpeed = 0.1
+
+
+data Actor = forall a. (Renderable a, RespondsToInput a) => Actor a
+instance Renderable Actor where
+  createRenderable renderer (Actor actor) = createRenderable renderer actor
+
+instance RespondsToInput Actor where
+  move input timeDelta (Actor actor) = Actor $ move input timeDelta actor
+
+
+class RespondsToInput a where
+  move :: InputKeyMap -> TimeDelta -> a -> a
+
+
 data GameState = GameState
-  { _gameState_actors :: [Ball]
+  { _gameState_actors :: [Actor]
   }
+
 
 getX :: V2 a -> a
 getX (V2 x _) = x
@@ -82,63 +103,126 @@ moveBall (Ball pos size (V2 velX velY) label) timeDelta =
   in Ball (pos + movementVector) size (V2 velX velY) label
 
 
-runGameStep :: GameState -> Float -> GameState
-runGameStep gameState timeDelta =
-  let playerBall = (_gameState_actors gameState) !! 0
-      otherBall = (_gameState_actors gameState) !! 1
-      collisionOccurred = hasCollided playerBall [otherBall]
-      collidedBall = if collisionOccurred then applyCollision playerBall otherBall else playerBall
-      collidedBall' = if collisionOccurred then applyCollision otherBall playerBall else otherBall
-      newBall = moveBall collidedBall timeDelta
-      newBall2 = moveBall collidedBall' timeDelta
-  in
-    GameState [newBall, newBall2]
+-- runGameStep :: GameState -> Float -> GameState
+-- runGameStep gameState timeDelta =
+--   let playerPaddle = (_gameState_actors gameState) !! 0
+--       gameBall = (_gameState_actors gameState) !! 1
+--       collisionOccurred = hasCollided playerPaddle [gameBall]
+--       --collidedBall = if collisionOccurred then applyCollision playerBall otherBall else playerBall
+--       --collidedBall' = if collisionOccurred then applyCollision otherBall playerBall else otherBall
+--       --newBall = moveBall collidedBall timeDelta
+--       --newBall2 = moveBall collidedBall' timeDelta
+--   in
+--     --GameState [newBall, newBall2]
+--     GameState [playerPaddle, gameBall]
 
 
 initialGameState :: GameState
 initialGameState =
-  let playerVel = V2 0.0 (-0.1)
-      otherVel = V2 0.0 (0.1)
-      playerSize = 0.1
-      otherSize = 0.1
-      playerStartPos = V2 0 0
-      otherStartPos = V2 0 (-0.5)
+  let playerStartPos = V2 (-1) 0
+      paddleWidth = 0.05
+      paddleHeight = 0.4
+      ballStartPos = V2 0.5 0.5
+      ballStartVel = V2 0.0 (-0.1)
+      ballSize = 0.1
 
-      playerBall = Ball playerStartPos playerSize playerVel  "Player"
-      otherBall  = Ball otherStartPos  otherSize  otherVel   "Other"
+      playerPaddle = Actor $ Paddle playerStartPos paddleWidth paddleHeight "Player"
+      gameBall = Actor $ Ball ballStartPos ballSize ballStartVel "Ball"
   in
-      GameState [playerBall, otherBall]
+      GameState [gameBall, playerPaddle]
+
 
 buildInitialScene :: Renderer os -> GameState -> ContextT GLFW.Handle os IO (Scene os)
-buildInitialScene renderer gameState = do
-  let playerBall = (_gameState_actors gameState) !! 0
-      otherBall = (_gameState_actors gameState) !! 1
-      playerVerts = mkCircleVerts ((_ball_size playerBall) / 2) 64
-      otherVerts = mkCircleVerts ((_ball_size otherBall) / 2) 64
+buildInitialScene renderer (GameState actors) = do
+  renderables <- mapM (createRenderable renderer) actors
+  pure $ Scene renderables
 
-  playerR <- createVertexBufferFromCircle renderer playerVerts (_ball_pos playerBall)
-  otherR <- createVertexBufferFromCircle renderer otherVerts (_ball_pos otherBall)
+  -- let playerPaddle = (_gameState_actors gameState) !! 0
+  --     gameBall = (_gameState_actors gameState) !! 1
 
-  pure $ Scene [playerR, otherR]
+  -- playerR <- createRenderable renderer playerPaddle
+  -- ballR <- createRenderable renderer gameBall
 
-updateScene :: Scene os -> GameState -> Scene os
-updateScene scene gs =
-  let actor1 = (_gameState_actors gs) !! 0
-      actor2 = (_gameState_actors gs) !! 1
-      r1 = (_renderables scene) !! 0
-      r2 = (_renderables scene) !! 1
-  in Scene [ r1 { origin = _ball_pos actor1 }
-           , r2 { origin = _ball_pos actor2 }
-           ]
+  -- pure $ Scene [playerR, ballR]
+
+
+
+-- updateScene :: Scene os -> GameState -> Scene os
+-- updateScene scene gs =
+--   let actor1 = (_gameState_actors gs) !! 0
+--       actor2 = (_gameState_actors gs) !! 1
+--       r1 = (_renderables scene) !! 0
+--       r2 = (_renderables scene) !! 1
+--   in Scene [ r1 { origin = _ball_pos actor1 }
+--            , r2 { origin = _paddle_pos actor2 }
+--            ]
+
+
+type KeyState = Int
+data InputKeyMap = InputKeyMap
+  { _inputKey_w :: KeyState
+  , _inputKey_s :: KeyState
+  }
+
+newtype TimeDelta = TimeDelta Float
+
+mapKeyState :: Maybe GLFW.KeyState -> KeyState
+mapKeyState = \case
+  Just GLFW.KeyState'Pressed -> 1
+  Just GLFW.KeyState'Released -> 0
+  Just GLFW.KeyState'Repeating -> 0
+  Nothing -> 0
+
+
+instance RespondsToInput Ball where
+  move _ _ ball = ball
+
+
+instance RespondsToInput Paddle where
+  move input (TimeDelta timeDelta) paddle =
+    let upwardMovement = (fromIntegral $ _inputKey_w input) * timeDelta * 1
+        downwardMovement = (fromIntegral $ _inputKey_s input) * timeDelta * (-1)
+        movementDelta = upwardMovement + downwardMovement
+        (V2 paddleX paddleY) = _paddle_pos paddle
+    in paddle
+       { _paddle_pos = V2 paddleX (paddleY + movementDelta)
+       }
+
+
+createScene :: GameState -> Scene
+createScene gameState = ??
+
 
 gameLoop :: Renderer os -> Scene os -> GameState -> Integer -> ContextT GLFW.Handle os IO ()
 gameLoop renderer scene gameState prevTime = do
-  shouldClose <- fromMaybe False <$> GLFW.windowShouldClose (win renderer)
+  let window = win renderer
+  shouldClose <- fromMaybe False <$> GLFW.windowShouldClose window
 
   currentTime <- liftIO getUnixTimeMillis
-  let timeDelta = realToFrac (currentTime - prevTime) / 1000.0 :: Float
-      updatedGameState = runGameStep gameState timeDelta
-      updatedScene = updateScene scene updatedGameState
+  let timeDelta = TimeDelta $ realToFrac (currentTime - prevTime) / 1000.0
+      --updatedGameState = runGameStep gameState timeDelta
+      --updatedGameState = gameState
+      --updatedScene = updateScene scene updatedGameState
+      updatedScene = scene
+
+  keyW <- GLFW.getKey window GLFW.Key'W
+  keyS <- GLFW.getKey window GLFW.Key'S
+
+  let updatedInputMap = InputKeyMap
+        { _inputKey_w = mapKeyState keyW
+        , _inputKey_s = mapKeyState keyS
+        }
+
+  -- move this stuff to game function code
+  -- let padd = _gameState_actors gameState !! 1
+  --     newPadd = movePaddle updatedInputMap padd timeDelta
+
+  let updatedGameState = gameState
+        { _gameState_actors = move updatedInputMap timeDelta <$> _gameState_actors gameState
+        }
+      updatedScene = scene updatedGameState
+
+  -- call move paddle
 
   renderScene
     renderer
@@ -150,6 +234,7 @@ gameLoop renderer scene gameState prevTime = do
       updatedScene
       updatedGameState
       currentTime
+
 
 main :: IO ()
 main = runContextT GLFW.defaultHandleConfig $ do

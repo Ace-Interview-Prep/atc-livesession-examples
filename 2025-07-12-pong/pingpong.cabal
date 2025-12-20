@@ -18,7 +18,11 @@ common warnings
 executable pingpong
     import:           warnings
     main-is:          Main.hs
-    -- other-modules:
+
+    other-modules:    Rendering
+                    , Paddle
+                    , Ball
+
     -- other-extensions:
     build-depends:    base
                     , vector
