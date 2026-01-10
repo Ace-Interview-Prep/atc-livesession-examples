@@ -7,6 +7,7 @@ module Rendering
   , RenderableData (..)
   , Scene (..)
   , Renderer (..)
+  , GLFWContext
   , initRenderer
   , renderScene
   , destroyAll
@@ -26,18 +27,19 @@ import Control.Lens.Getter ((^.))
 
 type GLFWContext os a = ContextT GLFW.Handle os IO a
 
+class Renderable a where
+  createRenderable :: Renderer os -> a -> GLFWContext os (RenderableData os)
+
+data Scene os = Scene
+  { _renderables :: [RenderableData os]
+  }
+
+
 data RenderableData os = RenderableData
   { origin :: V2 Float
   , localVerts :: [V2 Float]
   , buf :: Buffer os (B2 Float)
   , primArray :: PrimitiveArray Triangles (B2 Float)
-  }
-
-class Renderable a where
-  createRenderable :: Renderer os -> a -> ContextT GLFW.Handle os IO (RenderableData os)
-
-data Scene os = Scene
-  { _renderables :: [RenderableData os]
   }
 
 data Renderer os = Renderer

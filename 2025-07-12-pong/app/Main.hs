@@ -30,20 +30,36 @@ paddleMovementSpeed :: Float
 paddleMovementSpeed = 0.1
 
 
-data Actor = forall a. (Renderable a, RespondsToInput a) => Actor a
+data Actor = forall a. (Renderable a) => Actor a
+
 instance Renderable Actor where
   createRenderable renderer (Actor actor) = createRenderable renderer actor
 
-instance RespondsToInput Actor where
-  move input timeDelta (Actor actor) = Actor $ move input timeDelta actor
-
+instance Renderable Player where
+  createRenderable renderer player = createRenderable renderer (_player_paddle player)
 
 class RespondsToInput a where
-  move :: InputKeyMap -> TimeDelta -> a -> a
+  move :: TimeDelta -> a -> a -- Where did the input map go?
 
+data Player = Player
+  { _player_name :: PlayerName
+  , _player_input :: PlayerInput
+  , _player_paddle :: Paddle
+  }
+
+type PlayerName = String
+
+data PlayerInput = PlayerInput
+  { _playerInput_up :: KeyState
+  , _playerInput_down :: KeyState
+  }
+
+defaultPlayerInput = PlayerInput 0 0
 
 data GameState = GameState
-  { _gameState_actors :: [Actor]
+  { _gameState_player1 :: Player
+  , _gameState_player2 :: Player
+  , _gameState_environment :: [Actor]
   }
 
 
@@ -119,22 +135,29 @@ moveBall (Ball pos size (V2 velX velY) label) timeDelta =
 
 initialGameState :: GameState
 initialGameState =
-  let playerStartPos = V2 (-1) 0
+  let player1StartPos = V2 (-1) 0
+      player2StartPos = V2 (0.6) 0
       paddleWidth = 0.05
       paddleHeight = 0.4
       ballStartPos = V2 0.5 0.5
       ballStartVel = V2 0.0 (-0.1)
       ballSize = 0.1
 
-      playerPaddle = Actor $ Paddle playerStartPos paddleWidth paddleHeight "Player"
       gameBall = Actor $ Ball ballStartPos ballSize ballStartVel "Ball"
+
+      player1Paddle = Paddle player1StartPos paddleWidth paddleHeight "Player1"
+      player2Paddle = Paddle player2StartPos paddleWidth paddleHeight "Player2"
+      player1 = Player "Player 1" defaultPlayerInput player1Paddle
+      player2 = Player "Player 2" defaultPlayerInput player2Paddle
+
   in
-      GameState [gameBall, playerPaddle]
+      GameState player1 player2 [gameBall]
 
 
-buildInitialScene :: Renderer os -> GameState -> ContextT GLFW.Handle os IO (Scene os)
-buildInitialScene renderer (GameState actors) = do
-  renderables <- mapM (createRenderable renderer) actors
+buildScene :: Renderer os -> GameState -> GLFWContext os (Scene os)
+buildScene renderer (GameState player1 player2 _) = do
+  let players = [player1, player2]
+  renderables <- mapM (createRenderable renderer) players
   pure $ Scene renderables
 
   -- let playerPaddle = (_gameState_actors gameState) !! 0
@@ -162,7 +185,10 @@ type KeyState = Int
 data InputKeyMap = InputKeyMap
   { _inputKey_w :: KeyState
   , _inputKey_s :: KeyState
+  , _inputKey_up :: KeyState
+  , _inputKey_down :: KeyState
   }
+
 
 newtype TimeDelta = TimeDelta Float
 
@@ -174,23 +200,30 @@ mapKeyState = \case
   Nothing -> 0
 
 
-instance RespondsToInput Ball where
-  move _ _ ball = ball
-
-
-instance RespondsToInput Paddle where
-  move input (TimeDelta timeDelta) paddle =
-    let upwardMovement = (fromIntegral $ _inputKey_w input) * timeDelta * 1
-        downwardMovement = (fromIntegral $ _inputKey_s input) * timeDelta * (-1)
+instance RespondsToInput Player where
+  move (TimeDelta timeDelta) player =
+    let playerInput = _player_input player
+        upwardMovement = (fromIntegral $ _playerInput_up playerInput) * timeDelta * 1
+        downwardMovement = (fromIntegral $ _playerInput_down playerInput) * timeDelta * (-1)
         movementDelta = upwardMovement + downwardMovement
-        (V2 paddleX paddleY) = _paddle_pos paddle
-    in paddle
-       { _paddle_pos = V2 paddleX (paddleY + movementDelta)
+        paddle = _player_paddle player
+        (V2 paddleX paddleY) = _paddle_pos $ paddle
+
+    in player
+       { _player_paddle = paddle
+                          { _paddle_pos = V2 paddleX (paddleY + movementDelta)
+                          }
        }
 
 
-createScene :: GameState -> Scene
-createScene gameState = ??
+-- createScene :: GameState -> GLFWContext os Scene
+-- createScene gameState = do
+--   renderables <- (createRenderable renderer) <$> _gameState_actors gameState
+--   pure $ Scene
+--     { _renderables = renderables
+--     }
+
+
 
 
 gameLoop :: Renderer os -> Scene os -> GameState -> Integer -> ContextT GLFW.Handle os IO ()
@@ -203,24 +236,52 @@ gameLoop renderer scene gameState prevTime = do
       --updatedGameState = runGameStep gameState timeDelta
       --updatedGameState = gameState
       --updatedScene = updateScene scene updatedGameState
-      updatedScene = scene
+      --updatedScene = scene
 
   keyW <- GLFW.getKey window GLFW.Key'W
   keyS <- GLFW.getKey window GLFW.Key'S
+  keyUp <- GLFW.getKey window GLFW.Key'Up
+  keyDown <- GLFW.getKey window GLFW.Key'Down
 
   let updatedInputMap = InputKeyMap
-        { _inputKey_w = mapKeyState keyW
-        , _inputKey_s = mapKeyState keyS
-        }
+                        { _inputKey_w = mapKeyState keyW
+                        , _inputKey_s = mapKeyState keyS
+                        , _inputKey_up = mapKeyState keyUp
+                        , _inputKey_down = mapKeyState keyDown
+                        }
+
+      player1Input = PlayerInput
+                     { _playerInput_up = _inputKey_w updatedInputMap
+                     , _playerInput_down = _inputKey_s updatedInputMap
+                     }
+
+      player2Input = PlayerInput
+                     { _playerInput_up = _inputKey_up updatedInputMap
+                     , _playerInput_down = _inputKey_down updatedInputMap
+                     }
+
+      player1 = _gameState_player1 gameState
+      updatedPlayer1 = player1
+                       { _player_input = player1Input
+                       }
+
+      player2 = _gameState_player2 gameState
+      updatedPlayer2 = player2
+                       { _player_input = player2Input
+                       }
 
   -- move this stuff to game function code
   -- let padd = _gameState_actors gameState !! 1
   --     newPadd = movePaddle updatedInputMap padd timeDelta
 
   let updatedGameState = gameState
-        { _gameState_actors = move updatedInputMap timeDelta <$> _gameState_actors gameState
-        }
-      updatedScene = scene updatedGameState
+                         { _gameState_player1 = move timeDelta updatedPlayer1
+                         , _gameState_player2 = move timeDelta updatedPlayer2
+                         , _gameState_environment = _gameState_environment gameState
+                         --_gameState_actors = move updatedInputMap timeDelta <$> _gameState_actors gameState
+                         }
+
+  updatedScene <- buildScene renderer updatedGameState
 
   -- call move paddle
 
@@ -239,7 +300,7 @@ gameLoop renderer scene gameState prevTime = do
 main :: IO ()
 main = runContextT GLFW.defaultHandleConfig $ do
   renderer <- initRenderer (V2 screenW screenH)
-  initialScene <- buildInitialScene renderer initialGameState
+  initialScene <- buildScene renderer initialGameState
   startTime <- liftIO getUnixTimeMillis
 
   gameLoop
