@@ -9,10 +9,13 @@ module Main where
 
 import Control.Monad (unless)
 import Control.Monad.IO.Class
+import Data.List (find)
+import Data.Ord (clamp)
 import Data.Maybe
 import Data.Time.Clock.POSIX (getPOSIXTime)
-import Graphics.GPipe hiding (distance)
+import Graphics.GPipe hiding (distance, clamp)
 import qualified Graphics.GPipe.Context.GLFW as GLFW
+import qualified Debug.Trace as DT
 
 import Rendering
 import Ball
@@ -59,29 +62,117 @@ defaultPlayerInput = PlayerInput 0 0
 data GameState = GameState
   { _gameState_player1 :: Player
   , _gameState_player2 :: Player
-  , _gameState_environment :: [Actor]
+  , _gameState_ball :: Ball
   }
 
 
-getX :: V2 a -> a
-getX (V2 x _) = x
+initialGameState :: GameState
+initialGameState =
+  let player1StartPos = V2 (-1) 0
+      player2StartPos = V2 (0.6) 0
+      paddleWidth = 0.05
+      paddleHeight = 0.4
+      ballStartPos = V2 0.5 0.5
+      ballStartVel = V2 (-0.5) 0
+      ballSize = 0.1
 
-getY :: V2 a -> a
-getY (V2 _ y) = y
+      gameBall = Ball ballStartPos ballSize ballStartVel "Ball"
 
-absV2 :: V2 Float -> V2 Float
-absV2 (V2 x y) = V2 (abs x) (abs y)
+      player1Paddle = Paddle player1StartPos paddleWidth paddleHeight "Player1"
+      player2Paddle = Paddle player2StartPos paddleWidth paddleHeight "Player2"
+      player1 = Player "Player 1" defaultPlayerInput player1Paddle
+      player2 = Player "Player 2" defaultPlayerInput player2Paddle
 
-perpendicularV2 :: V2 Float -> V2 Float
-perpendicularV2 (V2 x y) = V2 y (-x)
+  in
+      GameState player1 player2 gameBall
 
-normalizeV2 :: V2 Float -> V2 Float
-normalizeV2 v =
-  let magnitude = sqrt (((getX v) ** 2) + (getY v) ** 2)
-  in V2 (getX v / magnitude) (getY v / magnitude)
 
-scalarMultiply :: V2 Float -> Float -> V2 Float
-scalarMultiply (V2 vx vy) s = V2 (vx * s) (vy * s)
+main :: IO ()
+main = runContextT GLFW.defaultHandleConfig $ do
+  renderer <- initRenderer (V2 screenW screenH)
+  initialScene <- buildScene renderer initialGameState
+  startTime <- liftIO getUnixTimeMillis
+
+  gameLoop
+    renderer
+    initialScene
+    initialGameState
+    startTime
+
+  destroyAll renderer
+
+
+gameLoop :: Renderer os -> Scene os -> GameState -> Integer -> ContextT GLFW.Handle os IO ()
+gameLoop renderer scene gameState prevTime = do
+  let window = win renderer
+  shouldClose <- fromMaybe False <$> GLFW.windowShouldClose window
+
+  currentTime <- liftIO getUnixTimeMillis
+  let timeDelta = TimeDelta $ realToFrac (currentTime - prevTime) / 1000.0
+      --updatedGameState = runGameStep gameState timeDelta
+      --updatedGameState = gameState
+      --updatedScene = updateScene scene updatedGameState
+      --updatedScene = scene
+
+  keyW <- GLFW.getKey window GLFW.Key'W
+  keyS <- GLFW.getKey window GLFW.Key'S
+  keyUp <- GLFW.getKey window GLFW.Key'Up
+  keyDown <- GLFW.getKey window GLFW.Key'Down
+
+  let updatedInputMap = InputKeyMap
+                        { _inputKey_w = mapKeyState keyW
+                        , _inputKey_s = mapKeyState keyS
+                        , _inputKey_up = mapKeyState keyUp
+                        , _inputKey_down = mapKeyState keyDown
+                        }
+
+      player1Input = PlayerInput
+                     { _playerInput_up = _inputKey_w updatedInputMap
+                     , _playerInput_down = _inputKey_s updatedInputMap
+                     }
+
+      player2Input = PlayerInput
+                     { _playerInput_up = _inputKey_up updatedInputMap
+                     , _playerInput_down = _inputKey_down updatedInputMap
+                     }
+
+      player1 = _gameState_player1 gameState
+      updatedPlayer1 = player1
+                       { _player_input = player1Input
+                       }
+
+      player2 = _gameState_player2 gameState
+      updatedPlayer2 = player2
+                       { _player_input = player2Input
+                       }
+
+  -- move this stuff to game function code
+  -- let padd = _gameState_actors gameState !! 1
+  --     newPadd = movePaddle updatedInputMap padd timeDelta
+
+  let updatedGameState = gameState
+                         { _gameState_player1 = move timeDelta updatedPlayer1
+                         , _gameState_player2 = move timeDelta updatedPlayer2
+                         --, _gameState_environment = _gameState_environment gameState
+                         , _gameState_ball = moveBall (handleCollision gameState) timeDelta
+                         --_gameState_actors = move updatedInputMap timeDelta <$> _gameState_actors gameState
+                         }
+
+  updatedScene <- buildScene renderer updatedGameState
+
+  -- call move paddle
+
+  renderScene
+    renderer
+    updatedScene
+
+  unless shouldClose $
+    gameLoop
+      renderer
+      updatedScene
+      updatedGameState
+      currentTime
+
 
 calculateBounceVelocity :: Ball -> Ball -> V2 Float
 calculateBounceVelocity (Ball ballPos1 _ ballVel1 _) (Ball ballPos2 _ ballVel2 _) =
@@ -95,70 +186,46 @@ calculateBounceVelocity (Ball ballPos1 _ ballVel1 _) (Ball ballPos2 _ ballVel2 _
     ballVel1 - velocityChange
 
 
-hasCollided :: Ball -> [Ball] -> Bool
-hasCollided _ [] = False
-hasCollided (Ball pos size mv label) ((Ball pos2 size2 _ _):bs) =
+hasCollided :: Ball -> Paddle -> Bool
+hasCollided ball@(Ball bPos bSize bMv bLabel) (Paddle pPos pWidth pHeight pLabel) =
   let
-    distanceX = (getX pos) - (getX pos2)
-    distanceY = (getY pos) - (getY pos2)
-    distance = sqrt ((distanceX ** 2) + (distanceY ** 2))
+    circleColliderX = ((getX pPos) + (pWidth / 2))
+    circleColliderY = clamp ((getY pPos), (getY pPos) + pHeight) $ getY bPos
+    distanceX = (getX bPos) - circleColliderX
+    distanceY = (getY bPos) - circleColliderY
+    distance = sqrt ((distanceX ** 2) + distanceY ** 2)
+    --distance = sqrt ((distanceX ** 2) + distanceY ** 2)
   in
-    if distance > (size/2) + (size2/2)
-    then hasCollided (Ball pos size mv label) bs
-    else True
+    distance <= (bSize / 2) + (pWidth / 2)
+
+
+calculateOverlap :: Ball -> Ball -> V2 Float
+calculateOverlap ball1@(Ball bp1 bs1 _ _) ball2@(Ball bp2 bs2 _ _) =
+  let
+    distance = lengthV2 (bp2 - bp1)
+    direction = normalizeV2 (bp2 - bp1)
+    overlapAmount = ((bs1 / 2) + (bs2 / 2)) - distance
+  in
+    scalarMultiply direction overlapAmount
 
 
 applyCollision :: Ball -> Ball -> Ball
 applyCollision ball1@(Ball pos size _ label) ball2 =
   let newVelocity = calculateBounceVelocity ball1 ball2
+      newPosition = pos + calculateOverlap ball1 ball2
+    --newVelocity = DT.trace ("applyCollision -> ball1 = " <> show ball1 <> " | ball2 = " <> show ball2) $ calculateBounceVelocity ball1 ball2
+    --newVel2 = DT.trace ("applyCollision -> newVelocity = " <> show newVelocity) newVelocity
   in Ball pos size newVelocity label
 
-moveBall :: Ball -> Float -> Ball
-moveBall (Ball pos size (V2 velX velY) label) timeDelta =
-  let movementVector = V2 (velX * timeDelta) (velY * timeDelta)
-  in Ball (pos + movementVector) size (V2 velX velY) label
-
-
--- runGameStep :: GameState -> Float -> GameState
--- runGameStep gameState timeDelta =
---   let playerPaddle = (_gameState_actors gameState) !! 0
---       gameBall = (_gameState_actors gameState) !! 1
---       collisionOccurred = hasCollided playerPaddle [gameBall]
---       --collidedBall = if collisionOccurred then applyCollision playerBall otherBall else playerBall
---       --collidedBall' = if collisionOccurred then applyCollision otherBall playerBall else otherBall
---       --newBall = moveBall collidedBall timeDelta
---       --newBall2 = moveBall collidedBall' timeDelta
---   in
---     --GameState [newBall, newBall2]
---     GameState [playerPaddle, gameBall]
-
-
-initialGameState :: GameState
-initialGameState =
-  let player1StartPos = V2 (-1) 0
-      player2StartPos = V2 (0.6) 0
-      paddleWidth = 0.05
-      paddleHeight = 0.4
-      ballStartPos = V2 0.5 0.5
-      ballStartVel = V2 0.0 (-0.1)
-      ballSize = 0.1
-
-      gameBall = Actor $ Ball ballStartPos ballSize ballStartVel "Ball"
-
-      player1Paddle = Paddle player1StartPos paddleWidth paddleHeight "Player1"
-      player2Paddle = Paddle player2StartPos paddleWidth paddleHeight "Player2"
-      player1 = Player "Player 1" defaultPlayerInput player1Paddle
-      player2 = Player "Player 2" defaultPlayerInput player2Paddle
-
-  in
-      GameState player1 player2 [gameBall]
 
 
 buildScene :: Renderer os -> GameState -> GLFWContext os (Scene os)
-buildScene renderer (GameState player1 player2 _) = do
+buildScene renderer (GameState player1 player2 ball) = do
   let players = [player1, player2]
-  renderables <- mapM (createRenderable renderer) players
-  pure $ Scene renderables
+  let actors = [Actor $ ball]
+  playerRenderables <- mapM (createRenderable renderer) players
+  actorRenderables <- mapM (\(Actor a) -> createRenderable renderer a) actors
+  pure $ Scene (playerRenderables <> actorRenderables)
 
   -- let playerPaddle = (_gameState_actors gameState) !! 0
   --     gameBall = (_gameState_actors gameState) !! 1
@@ -224,89 +291,58 @@ instance RespondsToInput Player where
 --     }
 
 
+moveBall :: Ball -> TimeDelta -> Ball
+moveBall (Ball pos size (V2 velX velY) label) (TimeDelta timeDelta) =
+  let movementVector = V2 (velX * timeDelta) (velY * timeDelta)
+  in Ball (pos + movementVector) size (V2 velX velY) label
 
 
-gameLoop :: Renderer os -> Scene os -> GameState -> Integer -> ContextT GLFW.Handle os IO ()
-gameLoop renderer scene gameState prevTime = do
-  let window = win renderer
-  shouldClose <- fromMaybe False <$> GLFW.windowShouldClose window
+handleCollision :: GameState -> Ball
+handleCollision gameState =
+  let
+    ball@(Ball bPos bSize bVel _) = _gameState_ball gameState
+    playerPaddles = [ (_player_paddle . _gameState_player1) gameState
+                    , (_player_paddle . _gameState_player2) gameState
+                    ]
 
-  currentTime <- liftIO getUnixTimeMillis
-  let timeDelta = TimeDelta $ realToFrac (currentTime - prevTime) / 1000.0
-      --updatedGameState = runGameStep gameState timeDelta
-      --updatedGameState = gameState
-      --updatedScene = updateScene scene updatedGameState
-      --updatedScene = scene
+    mCollided = find (hasCollided ball) playerPaddles
+  in
+    case mCollided of
+      Nothing -> ball
+      Just paddle@(Paddle pPos pWidth pHeight _) ->
+        let
+          circleColliderX = ((getX pPos) + (pWidth / 2))
+          circleColliderY = clamp ((getY pPos), (getY pPos) + pHeight) $ getY bPos
+          collisionPoint = V2 circleColliderX circleColliderY
 
-  keyW <- GLFW.getKey window GLFW.Key'W
-  keyS <- GLFW.getKey window GLFW.Key'S
-  keyUp <- GLFW.getKey window GLFW.Key'Up
-  keyDown <- GLFW.getKey window GLFW.Key'Down
+        in
+          applyCollision ball (Ball collisionPoint pHeight (negate <$> bVel) "paddle-ball")
 
-  let updatedInputMap = InputKeyMap
-                        { _inputKey_w = mapKeyState keyW
-                        , _inputKey_s = mapKeyState keyS
-                        , _inputKey_up = mapKeyState keyUp
-                        , _inputKey_down = mapKeyState keyDown
-                        }
+getX :: V2 a -> a
+getX (V2 x _) = x
 
-      player1Input = PlayerInput
-                     { _playerInput_up = _inputKey_w updatedInputMap
-                     , _playerInput_down = _inputKey_s updatedInputMap
-                     }
+getY :: V2 a -> a
+getY (V2 _ y) = y
 
-      player2Input = PlayerInput
-                     { _playerInput_up = _inputKey_up updatedInputMap
-                     , _playerInput_down = _inputKey_down updatedInputMap
-                     }
+absV2 :: V2 Float -> V2 Float
+absV2 (V2 x y) = V2 (abs x) (abs y)
 
-      player1 = _gameState_player1 gameState
-      updatedPlayer1 = player1
-                       { _player_input = player1Input
-                       }
+add :: V2 Float -> V2 Float -> V2 Float
+add (V2 x1 y1) (V2 x2 y2) = V2 (x1 + x2) (y1 + y2)
 
-      player2 = _gameState_player2 gameState
-      updatedPlayer2 = player2
-                       { _player_input = player2Input
-                       }
+sub :: V2 Float -> V2 Float -> V2 Float
+sub (V2 x1 y1) (V2 x2 y2) = V2 (x1 - x2) (y1 - y2)
 
-  -- move this stuff to game function code
-  -- let padd = _gameState_actors gameState !! 1
-  --     newPadd = movePaddle updatedInputMap padd timeDelta
+lengthV2 :: V2 Float -> Float
+lengthV2 (V2 x y) = sqrt (x*x + y*y)
 
-  let updatedGameState = gameState
-                         { _gameState_player1 = move timeDelta updatedPlayer1
-                         , _gameState_player2 = move timeDelta updatedPlayer2
-                         , _gameState_environment = _gameState_environment gameState
-                         --_gameState_actors = move updatedInputMap timeDelta <$> _gameState_actors gameState
-                         }
+perpendicularV2 :: V2 Float -> V2 Float
+perpendicularV2 (V2 x y) = V2 y (-x)
 
-  updatedScene <- buildScene renderer updatedGameState
+normalizeV2 :: V2 Float -> V2 Float
+normalizeV2 v =
+  let magnitude = sqrt (((getX v) ** 2) + (getY v) ** 2)
+  in V2 (getX v / magnitude) (getY v / magnitude)
 
-  -- call move paddle
-
-  renderScene
-    renderer
-    updatedScene
-
-  unless shouldClose $
-    gameLoop
-      renderer
-      updatedScene
-      updatedGameState
-      currentTime
-
-
-main :: IO ()
-main = runContextT GLFW.defaultHandleConfig $ do
-  renderer <- initRenderer (V2 screenW screenH)
-  initialScene <- buildScene renderer initialGameState
-  startTime <- liftIO getUnixTimeMillis
-
-  gameLoop
-    renderer
-    initialScene
-    initialGameState
-    startTime
-
-  destroyAll renderer
+scalarMultiply :: V2 Float -> Float -> V2 Float
+scalarMultiply (V2 vx vy) s = V2 (vx * s) (vy * s)
