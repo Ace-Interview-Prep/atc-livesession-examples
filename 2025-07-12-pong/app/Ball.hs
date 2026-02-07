@@ -20,6 +20,7 @@ data Ball = Ball
   , _ball_size     :: Float
   , _ball_velocity :: V2 Float
   , _label         :: String
+  , _ball_color    :: V4 Float
   } deriving Show
 
 -- | Make Ball renderable in the GPipe renderer system

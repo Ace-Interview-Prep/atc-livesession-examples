@@ -30,7 +30,7 @@ getUnixTimeMillis = floor . (*1000) <$> getPOSIXTime
 
 
 paddleMovementSpeed :: Float
-paddleMovementSpeed = 0.1
+paddleMovementSpeed = 0.2
 
 
 data Actor = forall a. (Renderable a) => Actor a
@@ -63,20 +63,23 @@ data GameState = GameState
   { _gameState_player1 :: Player
   , _gameState_player2 :: Player
   , _gameState_ball :: Ball
+  , _gameState_gizmoBallA :: Ball
+  , _gameState_gizmoBallB :: Ball
   }
-
 
 initialGameState :: GameState
 initialGameState =
-  let player1StartPos = V2 (-1) 0
-      player2StartPos = V2 (0.6) 0
+  let player1StartPos = V2 (-0.8) 0
+      player2StartPos = V2 (0.8) 0
       paddleWidth = 0.05
       paddleHeight = 0.4
-      ballStartPos = V2 0.5 0.5
-      ballStartVel = V2 (-0.5) 0
+      ballStartPos = V2 0.5 0
+      ballStartVel = V2 (-0.8) 0
       ballSize = 0.1
 
-      gameBall = Ball ballStartPos ballSize ballStartVel "Ball"
+      gameBall = Ball ballStartPos ballSize ballStartVel "Ball" (V4 1 1 1 1)
+      gizmoBallA = Ball player1StartPos paddleWidth (V2 0 0) "Player1 Gizmo" (V4 0 1 0 0)
+      gizmoBallB = Ball player2StartPos paddleWidth (V2 0 0) "Player2 Gizmo" (V4 0 1 0 0)
 
       player1Paddle = Paddle player1StartPos paddleWidth paddleHeight "Player1"
       player2Paddle = Paddle player2StartPos paddleWidth paddleHeight "Player2"
@@ -84,7 +87,7 @@ initialGameState =
       player2 = Player "Player 2" defaultPlayerInput player2Paddle
 
   in
-      GameState player1 player2 gameBall
+      GameState player1 player2 gameBall gizmoBallA gizmoBallB
 
 
 main :: IO ()
@@ -109,10 +112,6 @@ gameLoop renderer scene gameState prevTime = do
 
   currentTime <- liftIO getUnixTimeMillis
   let timeDelta = TimeDelta $ realToFrac (currentTime - prevTime) / 1000.0
-      --updatedGameState = runGameStep gameState timeDelta
-      --updatedGameState = gameState
-      --updatedScene = updateScene scene updatedGameState
-      --updatedScene = scene
 
   keyW <- GLFW.getKey window GLFW.Key'W
   keyS <- GLFW.getKey window GLFW.Key'S
@@ -146,21 +145,21 @@ gameLoop renderer scene gameState prevTime = do
                        { _player_input = player2Input
                        }
 
-  -- move this stuff to game function code
-  -- let padd = _gameState_actors gameState !! 1
-  --     newPadd = movePaddle updatedInputMap padd timeDelta
+  let newBall = moveBall (handleCollision gameState) timeDelta
+      newPlayer1 = move timeDelta updatedPlayer1
+      newPlayer2 = move timeDelta updatedPlayer2
 
   let updatedGameState = gameState
-                         { _gameState_player1 = move timeDelta updatedPlayer1
-                         , _gameState_player2 = move timeDelta updatedPlayer2
+                         { _gameState_player1 = newPlayer1
+                         , _gameState_player2 = newPlayer2
                          --, _gameState_environment = _gameState_environment gameState
-                         , _gameState_ball = moveBall (handleCollision gameState) timeDelta
+                         , _gameState_ball = newBall
+                         , _gameState_gizmoBallA = updateGizmoBall (_player_paddle newPlayer1) (_gameState_gizmoBallA gameState) (_ball_pos newBall)
+                         , _gameState_gizmoBallB = updateGizmoBall (_player_paddle newPlayer2) (_gameState_gizmoBallB gameState) (_ball_pos newBall)
                          --_gameState_actors = move updatedInputMap timeDelta <$> _gameState_actors gameState
                          }
 
   updatedScene <- buildScene renderer updatedGameState
-
-  -- call move paddle
 
   renderScene
     renderer
@@ -174,8 +173,18 @@ gameLoop renderer scene gameState prevTime = do
       currentTime
 
 
+updateGizmoBall :: Paddle -> Ball -> V2 Float -> Ball
+updateGizmoBall (Paddle pPos pWidth pHeight pLabel) ball pos =
+  let
+    circleColliderX = ((getX pPos) + (pWidth / 2))
+    circleColliderY = clamp ((getY pPos) - (pHeight / 2), (getY pPos) + (pHeight / 2)) $ getY pos
+  in
+    ball { _ball_pos = V2 circleColliderX circleColliderY
+         , _ball_size = pWidth
+         }
+
 calculateBounceVelocity :: Ball -> Ball -> V2 Float
-calculateBounceVelocity (Ball ballPos1 _ ballVel1 _) (Ball ballPos2 _ ballVel2 _) =
+calculateBounceVelocity (Ball ballPos1 _ ballVel1 _ _) (Ball ballPos2 _ ballVel2 _ _) =
   let
     collisionVector   = ballPos2 - ballPos1
     normalVector      = normalizeV2 collisionVector
@@ -187,65 +196,61 @@ calculateBounceVelocity (Ball ballPos1 _ ballVel1 _) (Ball ballPos2 _ ballVel2 _
 
 
 hasCollided :: Ball -> Paddle -> Bool
-hasCollided ball@(Ball bPos bSize bMv bLabel) (Paddle pPos pWidth pHeight pLabel) =
+hasCollided ball@(Ball bPos bSize bMv bLabel _) (Paddle pPos pWidth pHeight pLabel) =
   let
     circleColliderX = ((getX pPos) + (pWidth / 2))
-    circleColliderY = clamp ((getY pPos), (getY pPos) + pHeight) $ getY bPos
+    circleColliderY = clamp ((getY pPos) - (pHeight / 2), (getY pPos) + (pHeight / 2)) $ getY bPos
     distanceX = (getX bPos) - circleColliderX
     distanceY = (getY bPos) - circleColliderY
     distance = sqrt ((distanceX ** 2) + distanceY ** 2)
-    --distance = sqrt ((distanceX ** 2) + distanceY ** 2)
   in
     distance <= (bSize / 2) + (pWidth / 2)
 
 
 calculateOverlap :: Ball -> Ball -> V2 Float
-calculateOverlap ball1@(Ball bp1 bs1 _ _) ball2@(Ball bp2 bs2 _ _) =
+calculateOverlap ball1@(Ball bp1 bs1 _ _ _) ball2@(Ball bp2 bs2 _ _ _) =
   let
-    distance = lengthV2 (bp2 - bp1)
-    direction = normalizeV2 (bp2 - bp1)
+    distance = lengthV2 (bp1 - bp2)
+    direction = normalizeV2 (bp1 - bp2)
     overlapAmount = ((bs1 / 2) + (bs2 / 2)) - distance
   in
     scalarMultiply direction overlapAmount
 
 
+
+hasBallCollidedWithBoundary :: Ball -> Float -> Bool
+hasBallCollidedWithBoundary ball boundaryPosY =
+  let
+    distanceY = abs $ (getY $ _ball_pos ball) - boundaryPosY
+  in
+    distanceY <= (_ball_size ball / 2)
+
+
+
+hasPaddleCollidedWithBoundary :: Paddle -> Float -> Bool
+hasPaddleCollidedWithBoundary paddle boundaryPosY =
+  let
+    distanceY = (getY $ _paddle_pos paddle) + boundaryPosY
+  in
+    distanceY <= (_paddle_height paddle / 2)
+
+
 applyCollision :: Ball -> Ball -> Ball
-applyCollision ball1@(Ball pos size _ label) ball2 =
+applyCollision ball1@(Ball pos size _ label color) ball2 =
   let newVelocity = calculateBounceVelocity ball1 ball2
       newPosition = pos + calculateOverlap ball1 ball2
-    --newVelocity = DT.trace ("applyCollision -> ball1 = " <> show ball1 <> " | ball2 = " <> show ball2) $ calculateBounceVelocity ball1 ball2
-    --newVel2 = DT.trace ("applyCollision -> newVelocity = " <> show newVelocity) newVelocity
-  in Ball pos size newVelocity label
+  in Ball newPosition size newVelocity label color
 
 
 
 buildScene :: Renderer os -> GameState -> GLFWContext os (Scene os)
-buildScene renderer (GameState player1 player2 ball) = do
+buildScene renderer (GameState player1 player2 ball gizmoA gizmoB) = do
   let players = [player1, player2]
-  let actors = [Actor $ ball]
+  let actors = [Actor $ ball]--, Actor $ gizmoA, Actor $ gizmoB]
   playerRenderables <- mapM (createRenderable renderer) players
   actorRenderables <- mapM (\(Actor a) -> createRenderable renderer a) actors
   pure $ Scene (playerRenderables <> actorRenderables)
 
-  -- let playerPaddle = (_gameState_actors gameState) !! 0
-  --     gameBall = (_gameState_actors gameState) !! 1
-
-  -- playerR <- createRenderable renderer playerPaddle
-  -- ballR <- createRenderable renderer gameBall
-
-  -- pure $ Scene [playerR, ballR]
-
-
-
--- updateScene :: Scene os -> GameState -> Scene os
--- updateScene scene gs =
---   let actor1 = (_gameState_actors gs) !! 0
---       actor2 = (_gameState_actors gs) !! 1
---       r1 = (_renderables scene) !! 0
---       r2 = (_renderables scene) !! 1
---   in Scene [ r1 { origin = _ball_pos actor1 }
---            , r2 { origin = _paddle_pos actor2 }
---            ]
 
 
 type KeyState = Int
@@ -283,24 +288,17 @@ instance RespondsToInput Player where
        }
 
 
--- createScene :: GameState -> GLFWContext os Scene
--- createScene gameState = do
---   renderables <- (createRenderable renderer) <$> _gameState_actors gameState
---   pure $ Scene
---     { _renderables = renderables
---     }
-
 
 moveBall :: Ball -> TimeDelta -> Ball
-moveBall (Ball pos size (V2 velX velY) label) (TimeDelta timeDelta) =
+moveBall (Ball pos size (V2 velX velY) label color) (TimeDelta timeDelta) =
   let movementVector = V2 (velX * timeDelta) (velY * timeDelta)
-  in Ball (pos + movementVector) size (V2 velX velY) label
+  in Ball (pos + movementVector) size (V2 velX velY) label color
 
 
 handleCollision :: GameState -> Ball
 handleCollision gameState =
   let
-    ball@(Ball bPos bSize bVel _) = _gameState_ball gameState
+    ball@(Ball bPos bSize bVel _ _) = _gameState_ball gameState
     playerPaddles = [ (_player_paddle . _gameState_player1) gameState
                     , (_player_paddle . _gameState_player2) gameState
                     ]
@@ -308,15 +306,40 @@ handleCollision gameState =
     mCollided = find (hasCollided ball) playerPaddles
   in
     case mCollided of
-      Nothing -> ball
+      Nothing -> handleCollisionWithBoundary ball
       Just paddle@(Paddle pPos pWidth pHeight _) ->
         let
           circleColliderX = ((getX pPos) + (pWidth / 2))
-          circleColliderY = clamp ((getY pPos), (getY pPos) + pHeight) $ getY bPos
+          circleColliderY = clamp ((getY pPos) - (pHeight / 2), (getY pPos) + (pHeight / 2)) $ getY bPos
           collisionPoint = V2 circleColliderX circleColliderY
-
         in
-          applyCollision ball (Ball collisionPoint pHeight (negate <$> bVel) "paddle-ball")
+          applyCollision ball (Ball collisionPoint pWidth (negate <$> bVel) "paddle-ball" (V4 0 0 0 0))
+
+
+
+handleCollisionWithBoundary :: Ball -> Ball
+handleCollisionWithBoundary ball =
+  let
+    collidedTop = hasBallCollidedWithBoundary ball 1
+    
+    collidedBottom = hasBallCollidedWithBoundary ball (-1)
+  in
+    if collidedTop then
+      let
+        colliderY = 1 + (_ball_size ball / 2)
+        colliderY' = DT.trace ("Collided top") colliderY
+        collisionPoint = V2 (getX $ _ball_pos ball) colliderY'
+      in
+        applyCollision ball (Ball collisionPoint (_ball_size ball) (negate <$> (_ball_velocity ball)) "boundary-ball" (V4 0 0 0 0))
+    else if collidedBottom then
+      let
+        colliderY = (-1) - (_ball_size ball / 2)
+        colliderY' = DT.trace ("Collided bottom") colliderY
+        collisionPoint = V2 (getX $ _ball_pos ball) colliderY'
+      in
+        applyCollision ball (Ball collisionPoint (_ball_size ball) (negate <$> (_ball_velocity ball)) "boundary-ball" (V4 0 0 0 0))
+    else
+      ball
 
 getX :: V2 a -> a
 getX (V2 x _) = x
